@@ -121,7 +121,7 @@ def train():
         
         #checkpointing every batch for the 5 first epochs
         if epoch <= 5:
-            save_checkpoint(epoch, batch)
+            save_checkpoint(model, epoch, batch)
 
         if batch % args.log_interval == 0 and batch > 0:
             cur_loss = total_loss / args.log_interval
@@ -153,7 +153,7 @@ try:
         
         #checkpointing every epochs after the 5th epoch
         if epoch > 5:
-            save_checkpoint(epoch)
+            save_checkpoint(model, epoch)
         # Save the model if the validation loss is the best we've seen so far.
         if not best_val_loss or val_loss < best_val_loss:
             with open(args.save, 'wb') as f:
