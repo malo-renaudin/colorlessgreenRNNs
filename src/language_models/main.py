@@ -122,6 +122,8 @@ def train():
         #checkpointing every batch for the 5 first epochs
         if epoch <= 5:
             save_checkpoint(model, args.name, epoch, batch)
+            val_loss = evaluate(val_data)
+            logging.info('val_loss{:5.2f}')
 
         if batch % args.log_interval == 0 and batch > 0:
             cur_loss = total_loss / args.log_interval
