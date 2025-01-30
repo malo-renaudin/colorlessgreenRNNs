@@ -12,7 +12,7 @@ import time
 
 import torch
 import torch.nn as nn
-
+import os
 from dictionary_corpus import Corpus
 import model
 from lm_argparser import lm_parser
@@ -118,6 +118,10 @@ def train():
             p.data.add_(-lr, p.grad.data)
 
         total_loss += loss.item()
+        
+        #checkpointing every batch for the 5 first epochs
+        if epoch <= 5:
+            save_checkpoint(epoch, batch)
 
         if batch % args.log_interval == 0 and batch > 0:
             cur_loss = total_loss / args.log_interval
@@ -146,6 +150,10 @@ try:
                 'valid ppl {:8.2f}'.format(epoch, (time.time() - epoch_start_time),
                                            val_loss, math.exp(val_loss)))
         logging.info('-' * 89)
+        
+        #checkpointing every epochs after the 5th epoch
+        if epoch > 5:
+            save_checkpoint(epoch)
         # Save the model if the validation loss is the best we've seen so far.
         if not best_val_loss or val_loss < best_val_loss:
             with open(args.save, 'wb') as f:
