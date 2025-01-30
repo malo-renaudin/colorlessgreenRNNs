@@ -37,7 +37,7 @@ def batchify(data, bsz, cuda):
         data = data.cuda()
     return data
 
-def save_checkpoint(model, epoch, batch=None, experiment_name="experiment_name"):
+def save_checkpoint(model, experiment_name, epoch, batch=None):
     """Save model checkpoint."""
     checkpoint_dir = "checkpoints"
     
