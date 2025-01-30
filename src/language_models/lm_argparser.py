@@ -12,6 +12,8 @@ lm_parser = argparse.ArgumentParser(add_help=False)
 
 lm_parser.add_argument('--data', type=str,
                        help='location of the data corpus')
+lm_parser.add_argument('--name', type=str,
+                       help='experiment name')
 
 lm_parser.add_argument('--model', type=str, default='LSTM',
                        help='type of recurrent net (RNN_TANH, RNN_RELU, LSTM, GRU)')
