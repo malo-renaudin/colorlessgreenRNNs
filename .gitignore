@@ -3,3 +3,5 @@ data/**/*.output_*
 **/__pycache__
 src/**/*.pyc
 english_data/
+log/
+checkpoints/
