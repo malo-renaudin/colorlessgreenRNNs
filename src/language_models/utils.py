@@ -34,3 +34,16 @@ def batchify(data, bsz, cuda):
     if cuda:
         data = data.cuda()
     return data
+
+def save_checkpoint(epoch, batch=None):
+    """Save model checkpoint."""
+    checkpoint_dir = "checkpoints"
+    os.makedirs(checkpoint_dir, exist_ok=True)
+
+    if epoch <= 5:
+        filename = f"{checkpoint_dir}/epoch_{epoch}_batch_{batch}.pt"
+    else:
+        filename = f"{checkpoint_dir}/epoch_{epoch}.pt"
+
+    torch.save(model.state_dict(), filename)
+    logging.info(f"Checkpoint saved: {filename}")
