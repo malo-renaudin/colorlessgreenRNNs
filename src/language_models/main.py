@@ -16,7 +16,7 @@ import os
 from dictionary_corpus import Corpus
 import model
 from lm_argparser import lm_parser
-from utils import repackage_hidden, get_batch, batchify
+from utils import repackage_hidden, get_batch, batchify, save_checkpoint
 
 parser = argparse.ArgumentParser(parents=[lm_parser],
                                  description="Basic training and evaluation for RNN LM")
