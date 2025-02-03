@@ -93,6 +93,7 @@ def evaluate(data_source):
 
     return total_loss / (len(data_source) - 1)
 
+val_loss_data = []
 
 def train():
     # Turn on training mode which enables dropout.
@@ -124,6 +125,7 @@ def train():
             save_checkpoint(model, args.name, epoch, batch)
             val_loss = evaluate(val_data)
             logging.info('val_loss{:5.2f}')
+            val_loss_data.append({'epoch': epoch, 'batch': batch, 'val_loss': val_loss})
 
         if batch % args.log_interval == 0 and batch > 0:
             cur_loss = total_loss / args.log_interval
@@ -152,10 +154,12 @@ try:
                 'valid ppl {:8.2f}'.format(epoch, (time.time() - epoch_start_time),
                                            val_loss, math.exp(val_loss)))
         logging.info('-' * 89)
-        
+
         #checkpointing every epochs after the 5th epoch
         if epoch > 5:
             save_checkpoint(model, args.name, epoch)
+            val_loss_data.append({'epoch': epoch, 'batch': 'end_of_epoch', 'val_loss': val_loss})
+
         # Save the model if the validation loss is the best we've seen so far.
         if not best_val_loss or val_loss < best_val_loss:
             with open(args.save, 'wb') as f:
@@ -167,6 +171,9 @@ try:
 except KeyboardInterrupt:
     logging.info('-' * 89)
     logging.info('Exiting from training early')
+    
+val_loss_df = pd.DataFrame(val_loss_data)
+val_loss_df.to_csv('val_loss.csv', index=False)
 
 # Load the best saved model.
 with open(args.save, 'rb') as f:
