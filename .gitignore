@@ -5,3 +5,5 @@ src/**/*.pyc
 english_data/
 log/
 checkpoints/
+datah5/
+data/
