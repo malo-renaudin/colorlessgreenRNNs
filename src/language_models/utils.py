@@ -9,6 +9,7 @@
 import torch
 import os
 import logging
+import pandas as pd 
 
 def repackage_hidden(h):
     """Detaches hidden states from their history."""
@@ -26,15 +27,16 @@ def get_batch(source, i, seq_length):
     return data, target
 
 
-def batchify(data, bsz, cuda):
+def batchify(data, bsz, device):
     # Work out how cleanly we can divide the dataset into bsz parts.
     nbatch = data.size(0) // bsz
     # Trim off any extra elements that wouldn't cleanly fit (remainders).
     data = data.narrow(0, 0, nbatch * bsz)
     # Evenly divide the data across the bsz batches.
     data = data.view(bsz, -1).t().contiguous()
-    if cuda:
-        data = data.cuda()
+    # if device = 'cuda':
+    #     #data = data.cuda()
+    data = data.to(device)
     return data
 
 def save_checkpoint(model, experiment_name,epoch, batch=None):
@@ -53,3 +55,14 @@ def save_checkpoint(model, experiment_name,epoch, batch=None):
 
         torch.save(model.state_dict(), filename)
         logging.info(f"Checkpoint saved: {filename}")
+
+def move_to_device(hidden, device):
+     """Move each tensor in the hidden state tuple to the specified device."""
+     if isinstance(hidden, torch.Tensor):
+         return hidden.to(device)
+     else:
+         return tuple(move_to_device(h, device) for h in hidden)
+     
+def save_val_loss_data(val_loss_data, folder, filename):
+    val_loss_df = pd.DataFrame(val_loss_data)
+    val_loss_df.to_csv(os.path.join(folder, filename), index=False)
