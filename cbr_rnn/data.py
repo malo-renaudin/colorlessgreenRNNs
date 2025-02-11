@@ -34,16 +34,16 @@ class Dataset(object):
                 curr_data = np.stack([datafile[k][x:x+batch_size] for x in chunk_idxs])
                 
             if(k == 'input_masks'):
-                self.input_masks = torch.from_numpy(np.log(curr_data))
+                self.input_masks = torch.from_numpy(np.log(curr_data)).to(device)
             if(k == 'input_toks'):
-                self.input_toks = torch.from_numpy(np.swapaxes(curr_data, 1, 2))
+                self.input_toks = torch.from_numpy(np.swapaxes(curr_data, 1, 2)).to(device)
             if(k == 'aux_labels'):
-                self.aux_labels = torch.from_numpy(np.swapaxes(curr_data, 1, 2))
+                self.aux_labels = torch.from_numpy(np.swapaxes(curr_data, 1, 2)).to(device)
             if(k == 'length'):
-                self.lm_loss_pad_masks = self.populate_lm_pad_mask_array(curr_data, len(datafile['input_toks'][0]))
+                self.lm_loss_pad_masks = self.populate_lm_pad_mask_array(curr_data, len(datafile['input_toks'][0])).to(device)
             if(k == 'ent_loss_masks'):
-                self.type_loss_masks = torch.from_numpy(np.swapaxes(curr_data, 1, 2))
-                self.num_terminals = torch.from_numpy(curr_data.sum(axis=1))
+                self.type_loss_masks = torch.from_numpy(np.swapaxes(curr_data, 1, 2)).to(device)
+                self.num_terminals = torch.from_numpy(curr_data.sum(axis=1)).to(device)
     
     def __len__(self):
         return len(self.input_toks)
@@ -99,6 +99,7 @@ class SentenceCorpus(object):
         else:
             self.testfile = None
             self.trainfile = h5py.File(path + trainfname, "r")
+
             self.validfile = h5py.File(path + validfname, "r")
             self.num_train_exs = len(self.trainfile[self.input_label])
             self.num_valid_exs = len(self.validfile[self.input_label])
