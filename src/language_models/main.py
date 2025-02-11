@@ -16,7 +16,8 @@ import os
 from dictionary_corpus import Corpus
 import model
 from lm_argparser import lm_parser
-from utils import repackage_hidden, get_batch, batchify, save_checkpoint
+from utils import repackage_hidden, get_batch, batchify, save_checkpoint, move_to_device, save_val_loss_data
+import torch.profiler
 
 parser = argparse.ArgumentParser(parents=[lm_parser],
                                  description="Basic training and evaluation for RNN LM")
@@ -34,6 +35,9 @@ if torch.cuda.is_available():
         print("WARNING: You have a CUDA device, so you should probably run with --cuda")
     else:
         torch.cuda.manual_seed(args.seed)
+#NEW : added device      
+device = torch.device("cuda" if args.cuda else "cpu")
+print(f"Using device: {device}")
 
 ###############################################################################
 # Load data
@@ -48,9 +52,10 @@ logging.info("Vocab size %d", ntokens)
 
 logging.info("Batchying..")
 eval_batch_size = 10
-train_data = batchify(corpus.train, args.batch_size, args.cuda)
-val_data = batchify(corpus.valid, eval_batch_size, args.cuda)
-test_data = batchify(corpus.test, eval_batch_size, args.cuda)
+#NEW : changed args.cuda to device
+train_data = batchify(corpus.train, args.batch_size, device)
+val_data = batchify(corpus.valid, eval_batch_size, device)
+test_data = batchify(corpus.test, eval_batch_size, device)
 
 
 
@@ -63,8 +68,10 @@ criterion = nn.CrossEntropyLoss()
 logging.info("Building the model")
 
 model = model.RNNModel(args.model, ntokens, args.emsize, args.nhid, args.nlayers, args.dropout, args.tied)
+#NEW : changed model.cuda() to model.to(device)
 if args.cuda:
-    model.cuda()
+    #model.cuda()
+    model = model.to(device)
 
 
 
@@ -77,11 +84,14 @@ def evaluate(data_source):
     # Turn on evaluation mode which disables dropout.
     model.eval()
     total_loss = 0
-    hidden = model.init_hidden(eval_batch_size)
+    #NEW : move hidden to device
+    hidden = move_to_device(model.init_hidden(eval_batch_size), device)
 
     with torch.no_grad():
         for i in range(0, data_source.size(0) - 1, args.bptt):
             data, targets = get_batch(data_source, i, args.bptt)
+            #NEW : move data and targets to device
+            data, targets = data.to(device), targets.to(device)
             #> output has size seq_length x batch_size x vocab_size
             output, hidden = model(data, hidden)
             #> output_flat has size num_targets x vocab_size (batches are stacked together)
@@ -92,7 +102,10 @@ def evaluate(data_source):
             hidden = repackage_hidden(hidden)
 
     return total_loss / (len(data_source) - 1)
-
+#NEW : create folder for checkpointing
+main_folder = '/scratch2/mrenaudin/colorlessgreenRNNs/val_loss'
+subfolder = os.path.join(main_folder, args.name)
+os.makedirs(subfolder, exist_ok=True)
 val_loss_data = []
 
 def train():
@@ -100,11 +113,14 @@ def train():
     model.train()
     total_loss = 0
     start_time = time.time()
-
-    hidden = model.init_hidden(args.batch_size)
+    #NEW : move hidden to devide
+    hidden = move_to_device(model.init_hidden(args.batch_size), device)
 
     for batch, i in enumerate(range(0, train_data.size(0) - 1, args.bptt)):
         data, targets = get_batch(train_data, i, args.bptt)
+        #NEW : move data and target to device
+        data, targets = data.to(device), targets.to(device)
+
         # truncated BPP
         hidden = repackage_hidden(hidden)
         model.zero_grad()
@@ -119,13 +135,16 @@ def train():
             p.data.add_(-lr, p.grad.data)
 
         total_loss += loss.item()
-        
+        #NEW : added checkpointing
         #checkpointing every batch for the 5 first epochs
-        if epoch <= 5:
+        if epoch <= 3 and batch % 100 == 0:
             save_checkpoint(model, args.name, epoch, batch)
             val_loss = evaluate(val_data)
-            logging.info('val_loss{:5.2f}')
+            filename = f'epoch{epoch}_batch{batch}'
+            logging.info('| epoch {:3d} | {:5d}/{:5d} batches | val_loss{:5.2f}'.format(epoch, batch, len(train_data) // args.bptt, val_loss))
             val_loss_data.append({'epoch': epoch, 'batch': batch, 'val_loss': val_loss})
+            save_val_loss_data(val_loss_data, subfolder, filename)
+            model.train()
 
         if batch % args.log_interval == 0 and batch > 0:
             cur_loss = total_loss / args.log_interval
@@ -154,12 +173,17 @@ try:
                 'valid ppl {:8.2f}'.format(epoch, (time.time() - epoch_start_time),
                                            val_loss, math.exp(val_loss)))
         logging.info('-' * 89)
-
+        
+        #NEW : added checkpointing
         #checkpointing every epochs after the 5th epoch
-        if epoch > 5:
+        if epoch > 3:
             save_checkpoint(model, args.name, epoch)
+            # val_loss = evaluate(val_data)
+            # logging.info('| epoch {:3d} | val_loss{:5.2f}'.format(epoch, val_loss))
             val_loss_data.append({'epoch': epoch, 'batch': 'end_of_epoch', 'val_loss': val_loss})
-
+            filename = f'epoch{epoch}'
+            save_val_loss_data(val_loss_data, subfolder, filename)
+            model.train()
         # Save the model if the validation loss is the best we've seen so far.
         if not best_val_loss or val_loss < best_val_loss:
             with open(args.save, 'wb') as f:
@@ -172,8 +196,8 @@ except KeyboardInterrupt:
     logging.info('-' * 89)
     logging.info('Exiting from training early')
     
-val_loss_df = pd.DataFrame(val_loss_data)
-val_loss_df.to_csv('val_loss.csv', index=False)
+# val_loss_df = pd.DataFrame(val_loss_data)
+# val_loss_df.to_csv('val_loss.csv', index=False)
 
 # Load the best saved model.
 with open(args.save, 'rb') as f:

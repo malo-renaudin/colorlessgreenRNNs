@@ -46,7 +46,7 @@ def save_checkpoint(model, experiment_name,epoch, batch=None):
     # Create a subfolder for the experiment within the checkpoints directory
     experiment_dir = os.path.join(checkpoint_dir, experiment_name)
     os.makedirs(experiment_dir, exist_ok=True)
-    if batch is None or batch % 1000 == 0:
+    if batch is None or batch % 100 == 0:
 
         if batch is None:
             filename = f"{experiment_dir}/epoch_{epoch}.pt"    

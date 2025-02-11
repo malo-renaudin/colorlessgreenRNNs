@@ -10,9 +10,9 @@ import argparse
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+import model
 import dictionary_corpus
-from utils import repackage_hidden, batchify, get_batch
+from utils import repackage_hidden, batchify, get_batch, move_to_device
 import numpy as np
 
 parser = argparse.ArgumentParser(description='Mask-based evaluation: extracts softmax vectors for specified words')
@@ -28,20 +28,29 @@ parser.add_argument('--cuda', action='store_true',
 
 parser.add_argument('--path', type=str, help='path to test file (text) gold file (indices of words to evaluate)')
 parser.add_argument('--suffix', type=str, help='suffix for generated output files which will be saved as path.output_suffix')
+parser.add_argument('--output', type=str, help='path to output file')
+
 args = parser.parse_args()
 
+device = torch.device("cuda" if args.cuda else "cpu")
+print(f"Using device: {device}")
+#NEW : Reinitialize the model because of how the checkpointing was made
+model = model.RNNModel('LSTM', 50001, 200, 650, 2, 0.2, False)
+model = model.to(device)
 
 def evaluate(data_source, mask):
     # Turn on evaluation mode which disables dropout.
     model.eval()
     total_loss = 0
-
-    hidden = model.init_hidden(eval_batch_size)
+    #Pre-NEW : Should I move hidden state to device ?
+    hidden = move_to_device(model.init_hidden(eval_batch_size), device)
+    #hidden = model.init_hidden(eval_batch_size)
 
     with torch.no_grad():
         for i in range(0, data_source.size(0) - 1, seq_len):
             # keep continuous hidden state across all sentences in the input file
             data, targets = get_batch(data_source, i, seq_len)
+            data, targets = data.long().to(device), targets.long().to(device)
             _, targets_mask = get_batch(mask, i, seq_len)
             output, hidden = model(data, hidden)
             output_flat = output.view(-1, vocab_size)
@@ -88,13 +97,22 @@ if torch.cuda.is_available():
     else:
         torch.cuda.manual_seed(args.seed)
 
+#NEW : Changed model loading
 with open(args.checkpoint, 'rb') as f:
-    print("Loading the model")
-    if args.cuda:
-        model = torch.load(f)
-    else:
-        # to convert model trained on cuda to cpu model
-        model = torch.load(f, map_location = lambda storage, loc: storage)
+      print("Loading the model")
+      state_dict = torch.load(f, map_location='cuda' if args.cuda else 'cpu')
+      model.load_state_dict(state_dict)
+
+
+# with open(args.checkpoint, 'rb') as f:
+#     print("Loading the model")
+#     if args.cuda:
+#         model = torch.load(f)
+#     else:
+#         # to convert model trained on cuda to cpu model
+#         model = torch.load(f, map_location = lambda storage, loc: storage)
+
+
 model.eval()
 
 if args.cuda:
@@ -114,8 +132,10 @@ print("Computing probabilities for target words")
 index_col = 0
 
 mask = create_target_mask(args.path + ".text", args.path + ".eval", index_col)
-mask_data = batchify(torch.LongTensor(mask), eval_batch_size, args.cuda)
-test_data = batchify(dictionary_corpus.tokenize(dictionary, args.path + ".text"), eval_batch_size, args.cuda)
+mask_data = batchify(torch.LongTensor(mask), eval_batch_size, device)
+print("mask data", mask_data.size(0))
+test_data = batchify(dictionary_corpus.tokenize(dictionary, args.path + ".text"), eval_batch_size, device)
+
 
 f_output = open(args.path + ".output_" + args.suffix, 'w')
 evaluate(test_data, mask_data)

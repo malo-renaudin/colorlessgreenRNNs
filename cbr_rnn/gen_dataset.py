@@ -56,6 +56,8 @@ def unk(word, curr_vocab):
 def gen_vocab(curr_vocab, vocab_size, predefined, outfname):
     if(vocab_size is None):
         vocab_size = len(curr_vocab + predefined)
+        # vocab_size = len(list(curr_vocab.keys()) + predefined)
+
     vocab_to_include = predefined + [x[0] for x in curr_vocab.most_common(vocab_size - len(predefined))]
     idx2tok = []
     with open(outfname, mode='wt', encoding='utf-8') as f:
@@ -79,13 +81,19 @@ def load_vocab(fname):
 ##############################################
 
 print("Loading raw train/valid/test data...")
-with open(args.train_input_fname, 'rb') as f:
-    raw_train_data = pickle.load(f)
+# with open(args.train_input_fname, 'rb') as f:
+#     raw_train_data = pickle.load(f)
+with open(args.train_input_fname, 'r', encoding='utf-8') as f:
+    raw_train_data = f.readlines()  # or `f.read()` for full content
 random.shuffle(raw_train_data)
-with open(args.valid_input_fname, 'rb') as f:
-    raw_valid_data = pickle.load(f)
-with open(args.test_input_fname, 'rb') as f:
-    raw_test_data = pickle.load(f)
+# with open(args.valid_input_fname, 'rb') as f:
+#     raw_valid_data = pickle.load(f)
+with open(args.valid_input_fname, 'r', encoding='utf-8') as f:
+    raw_valid_data = f.readlines() 
+# with open(args.test_input_fname, 'rb') as f:
+#     raw_test_data = pickle.load(f)
+with open(args.test_input_fname, 'r', encoding='utf-8') as f:
+    raw_test_data = f.readlines() 
 
 print("Generating model vocabulary...")
 vocab = Counter()

@@ -16,9 +16,10 @@ import data
 import model
 import pickle
 import os.path
-
+import torch.cuda.amp as amp
 import torch.nn.functional as F
 from torch import Tensor
+import logging
 
 # suppress SourceChangeWarnings
 warnings.filterwarnings("ignore")
@@ -31,6 +32,8 @@ parser = argparse.ArgumentParser(description='PyTorch RNN/LSTM Language Model')
 parser.add_argument('--model', type=str, default='CBRRNN',
                     choices=['RNN_TANH', 'RNN_RELU', 'LSTM', 'GRU','CBRRNN'],
                     help='type of recurrent net')
+parser.add_argument('--name', type=str,
+                    help='experiment name')
 parser.add_argument('--emsize', type=int, default=128,
                     help='size of word embeddings')
 parser.add_argument('--nhid', type=int, default=128,
@@ -109,6 +112,10 @@ parser.add_argument('--freeze_embedding', action='store_true',
 parser.add_argument('--log_interval', type=int, default=500, metavar='N',
                     help='report interval')
 
+#Update attention head
+parser.add_argument('--update_attention_heads', type=int, default=33,
+                    help='adds a new attention head every 33 epochs by default')
+
 args = parser.parse_args()
 
     
@@ -164,6 +171,7 @@ if not args.test:
                 model.uniform_attention = False
     else:
         ntokens = len(corpus.dictionary)
+        
         if(args.aux_objective):
             nauxclasses = len(corpus.aux_dictionary)
         else:
@@ -204,6 +212,8 @@ for parameter in model.parameters():
     total_params += curr_param_num
 print("Done!")
 print("Total parameters of model: ", total_params)
+print('ntokens', ntokens)
+print('nauxclasses', nauxclasses)
 if(not args.test):
     print("Beginning Training...")
 sys.stdout.flush()
@@ -298,6 +308,25 @@ def repackage_hidden(in_state):
         return in_state.detach()
     else:
         return tuple(repackage_hidden(value) for value in in_state)
+    
+def save_checkpoint(model, experiment_name, epoch, batch=None):
+    """Save model checkpoint."""
+    checkpoint_dir = "checkpoints"
+
+    # Create a subfolder for the experiment within the checkpoints directory
+    experiment_dir = os.path.join(checkpoint_dir, experiment_name)
+    os.makedirs(experiment_dir, exist_ok=True)
+    if batch is None or batch % 1000 == 0:
+
+        if batch is None:
+            filename = f"{experiment_dir}/epoch_{epoch}.pt"
+        else:
+            filename = f"{experiment_dir}/epoch_{epoch}_batch_{batch}.pt"
+
+        torch.save(model.state_dict(), filename)
+        logging.info(f"Checkpoint saved: {filename}")
+
+
 
 def evaluate(data_source):
     """ Evaluate for validation (no adaptation, no complexity output) """
@@ -335,6 +364,7 @@ def evaluate(data_source):
             total_scaled_loss += scale_loss(loss_data)
     return total_scaled_loss, total_loss, total_aux_correct
 
+
 def train(epoch):
     """ Train language model """
     # Turn on training mode which enables dropout.
@@ -361,23 +391,35 @@ def train(epoch):
         lm_input_mask = lm_input_mask.log()
     while(curr_train_chunk is not None): 
         for batch in range(len(curr_train_chunk)):
-            batch_data = curr_train_chunk.input_toks[batch]
-            if(args.model == 'CBRRNN'):
-                if(curr_train_chunk.input_masks is not None):
-                    batch_masks = curr_train_chunk.input_masks[batch][:,:-1]
+            batch_data = curr_train_chunk.input_toks[batch].to(device)
+            with amp.autocast():
+                if(args.model == 'CBRRNN'):
+                    if(curr_train_chunk.input_masks is not None):
+                        batch_masks = curr_train_chunk.input_masks[batch][:,:-1].to(device)
+                    else:
+                        batch_masks = lm_input_mask.to(device)
+                    cache = model.init_cache(batch_data)
+                    # print('batch_data[:-1]', batch_data[:-1].shape)
+                    # print('cache', cache[0].shape)
+                    # print('cache', cache[1].shape)
+                    # print('batch_masks', batch_masks.shape)
+                    output, hidden_batch_all, aux_preds, _ = model(batch_data[:-1], cache, masks=batch_masks, output_attn=args.attn_entropy_loss)
+                    hidden_batch = hidden_batch_all[-1]
                 else:
-                    batch_masks = lm_input_mask
-                cache = model.init_cache(batch_data)
-                output, hidden_batch_all, aux_preds, _ = model(batch_data[:-1], cache, masks=batch_masks, output_attn=args.attn_entropy_loss)
-                hidden_batch = hidden_batch_all[-1]
-            else:
-                batch_masks = None
-                output, hidden_batch, aux_preds = model(batch_data, hidden_batch)
-
-            loss_data = get_loss(output, curr_train_chunk, batch, aux_preds, total_loss.keys())
-            for loss_type_i in loss_data.keys():
-                total_loss[loss_type_i][0] += loss_data[loss_type_i][0].sum().item()
-                total_loss[loss_type_i][1] += loss_data[loss_type_i][1]
+                    batch_masks = None
+                    output, hidden_batch, aux_preds = model(batch_data, hidden_batch)
+                if epoch <= 5 and batch % 1000 == 0:
+                    save_checkpoint(model, args.name, epoch, batch)
+                    # scaled_val_loss, val_loss, aux_loss = evaluate(
+                    #     corpus.valid)
+                    logging.info('val_loss{:5.2f}')
+                output = output.to(device)
+                aux_preds = aux_preds.to(device)
+                #output, curr_train_chunk, batch, aux_preds = output.to(device), curr_train_chunk, batch.to(device), aux_preds.to(device)
+                loss_data = get_loss(output, curr_train_chunk, batch, aux_preds, total_loss.keys())
+                for loss_type_i in loss_data.keys():
+                    total_loss[loss_type_i][0] += loss_data[loss_type_i][0].sum().item()
+                    total_loss[loss_type_i][1] += loss_data[loss_type_i][1]
 
             loss = scale_loss(loss_data)
                 
@@ -385,7 +427,7 @@ def train(epoch):
             # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
             torch.nn.utils.clip_grad_norm(model.parameters(), args.clip)
             optimizer.step()
-
+           
             # Detach the hidden state from how it was previously produced.
             # If we didn't, the model would try backpropagating all the way to start of the dataset.
             if(args.model != 'CBRRNN'):
@@ -429,8 +471,11 @@ if not args.test:
     try:
         for epoch in range(start_epoch, args.epochs+1):
             epoch_start_time = time.time()
+            model.to(device)
             train(epoch)
             combined_loss, all_loss, aux_acc = evaluate(corpus.valid)
+            if epoch > 5:
+                save_checkpoint(model, args.name, epoch)
             log_training_step(all_loss, epoch, (time.time() - epoch_start_time), lr, train=False, combined_loss=combined_loss, aux_acc=aux_acc)
             # Save the model if the validation loss is the best we've seen so far.
             if (not best_val_loss or (combined_loss < best_val_loss)) or (args.force_overwrite) or (epoch == args.attn_entropy_loss_delay):

@@ -28,11 +28,12 @@ def lstm_probs(output, gold, w2idx):
 lang = sys.argv[1]
 model = sys.argv[2]
 
-path_repo = "../data"
+path_repo = "/scratch2/mrenaudin/colorlessgreenRNNs/data"
 path_test_data = path_repo + "/agreement/" + lang + "/generated"
 path_output = path_repo + "/agreement/" + lang + "/generated.output_"
-path_lm_data = path_repo + "/lm/" + lang
-
+path_lm_data = '/scratch2/mrenaudin/colorlessgreenRNNs/english_data'
+#path_repo + "/lm/" + lang
+path_results = "/scratch2/mrenaudin/colorlessgreenRNNs/results"
 gold = open(path_test_data + ".gold").readlines()
 sents = open(path_test_data + ".text").readlines()
 data = pd.read_csv(path_test_data + ".tab",sep="\t")
@@ -47,7 +48,9 @@ probs = pd.DataFrame([])
 if os.path.isfile(path_output + model):
     #print(model)
     output = open(path_output  + model).readlines()
-    #print(len(output))
+    print(len(output))
+    print(len(lstm_probs(output, gold, vocab)))
+    print(len(data))
     data[model] = lstm_probs(output, gold, vocab)
 
 
@@ -82,3 +85,7 @@ a = pd.concat([t[t.type=="original"].groupby("pattern").agg({(m, "acc"): "mean" 
 
 print()
 print("Accuracy by pattern\n", a)
+
+# save_path = os.path.join(path_results, f"{model}_results.csv")
+# a.to_csv(save_path, sep="\t", index=False)
+# print(f"Results saved to {save_path}")

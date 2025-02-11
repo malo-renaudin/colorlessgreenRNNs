@@ -3,6 +3,7 @@
 import numpy as np
 import torch.nn as nn
 import torch
+import gc
 
 class RNNModel(nn.Module):
     """Container module with an encoder, a recurrent module, and a decoder."""
@@ -11,6 +12,7 @@ class RNNModel(nn.Module):
                  embedding_file=None, dropout=0.5, tie_weights=False, freeze_embedding=False, aux_objective=False, nauxclasses=0):
         super(RNNModel, self).__init__()
         self.drop = nn.Dropout(dropout)
+        
         if embedding_file:
             # Use pre-trained embeddings
             embed_weights = self.load_embeddings(embedding_file, ntoken, ninp)
@@ -134,7 +136,7 @@ class CueBasedRNNModel(nn.Module):
             embed_weights = self.load_embeddings(embedding_file, ntoken, ninp)
             self.encoder = nn.Embedding.from_pretrained(embed_weights)
         else:
-            self.encoder = nn.Embedding(ntoken, ninp)
+            self.encoder = nn.Embedding(ntoken+1, ninp)
         
         #generate query from hidden state and embedding
         self.q = nn.Linear(ninp+nhid,nhid)
@@ -149,7 +151,7 @@ class CueBasedRNNModel(nn.Module):
             #from large intermediate layer to current word key, value, and next-word prediction
             self.final_h = nn.Linear(nhid*4,nhid*3)
 
-        self.decoder = nn.Linear(nhid, ntoken)
+        self.decoder = nn.Linear(nhid, ntoken+1)
         self.aux_objective = aux_objective
         if(aux_objective):
             self.aux_decoder = nn.Linear(nhid, nauxclasses)
@@ -210,6 +212,23 @@ class CueBasedRNNModel(nn.Module):
                 ctr += 1
         return(torch.tensor(weights).float())
     
+    def add_attention_head(self):
+        """ Adds an extra attention head by expanding the key and value projections. """
+        self.nheads += 1
+        nhid = self.nhid
+        
+        # Expand the existing layers to accommodate the new attention head
+        new_final_h = nn.Linear(nhid * 4, nhid * (2 + self.nheads))
+        new_final_h.weight.data[:self.final_h.out_features, :] = self.final_h.weight.data
+        new_final_h.bias.data[:self.final_h.out_features] = self.final_h.bias.data
+        
+        self.final_h = new_final_h.to(self.device)
+        print(f"Added a new attention head. Total heads: {self.nheads}")
+    
+    def update_attention_heads(self, epoch, n):
+        """ Adds an attention head every n epochs """
+        if epoch % n == 0:
+            self.add_attention_head()
     #b = batch size, n = sequence length, d = dimensionality 
     #masks are of size b * n * n+1 - dim 3 is token a attending token b in dim 4
     def forward(self, observation, initial_cache, masks=None, attn_softmax_scaling_factor=1, output_attn=False, uniform_attn=False, random_attn=False):
@@ -233,7 +252,6 @@ class CueBasedRNNModel(nn.Module):
                     attn_scores = torch.rand(masks[:,i,:i+1].shape).to(self.device)
                 else:
                     attn_scores = torch.bmm(key_cache.swapaxes(0,1), query_n).squeeze(dim=-1)
-                
                 if(masks is not None):
                     masked_scores = attn_scores + masks[:,i,:i+1]
                 else:
@@ -252,6 +270,7 @@ class CueBasedRNNModel(nn.Module):
                 #project to final layer to generate current word key, final hidden state used for prediction
                 key_cache_i, value_cache_i, hidden_i = self.drop(self.tanh(self.f_norm(self.final_h(intermediate)))).split(self.nhid, dim=-1)
                 #update memory cache for attention and hidden states. Currently inefficent
+                #Can be changed by intializing a tnesor of zeros of dim (seq_len, batch_size, nhid) before the loop and just appending on it 
                 hidden = torch.cat((hidden, hidden_i.unsqueeze(0)), dim=0)
                 key_cache = torch.cat((key_cache, key_cache_i.unsqueeze(0)), dim=0)
                 value_cache = torch.cat((value_cache, value_cache_i.unsqueeze(0)), dim=0)
@@ -259,7 +278,9 @@ class CueBasedRNNModel(nn.Module):
                 intermediate = self.drop(self.tanh(self.int_norm(self.intermediate_h(torch.cat((emb[i],query,hidden[i]),-1)))))
                 hidden_i = self.drop(self.tanh(self.f_norm(self.final_h(intermediate))))
                 hidden = torch.cat((hidden, hidden_i.unsqueeze(0)), dim=0)
-
+            #delete temporary variables
+            del query, query_n, attn_scores, masked_scores, attn_weights, attn, intermediate, key_cache_i, value_cache_i, hidden_i
+            gc.collect() 
         output = hidden[1:]
         decoded = self.decoder(output)
         if(self.aux_objective):
