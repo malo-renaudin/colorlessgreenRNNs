@@ -137,7 +137,15 @@ def train():
         total_loss += loss.item()
         #NEW : added checkpointing
         #checkpointing every batch for the 5 first epochs
-        if epoch <= 3 and batch % 100 == 0:
+        if epoch <= 1 and batch % 10 == 0 and batch <=300:
+            save_checkpoint(model, args.name, epoch, batch)
+            val_loss = evaluate(val_data)
+            filename = f'epoch{epoch}_batch{batch}'
+            logging.info('| epoch {:3d} | {:5d}/{:5d} batches | val_loss{:5.2f}'.format(epoch, batch, len(train_data) // args.bptt, val_loss))
+            val_loss_data.append({'epoch': epoch, 'batch': batch, 'val_loss': val_loss})
+            save_val_loss_data(val_loss_data, subfolder, filename)
+            model.train()
+        if epoch <=2 and batch % 100 == 0:
             save_checkpoint(model, args.name, epoch, batch)
             val_loss = evaluate(val_data)
             filename = f'epoch{epoch}_batch{batch}'
@@ -176,7 +184,7 @@ try:
         
         #NEW : added checkpointing
         #checkpointing every epochs after the 5th epoch
-        if epoch > 3:
+        if epoch > 2:
             save_checkpoint(model, args.name, epoch)
             # val_loss = evaluate(val_data)
             # logging.info('| epoch {:3d} | val_loss{:5.2f}'.format(epoch, val_loss))

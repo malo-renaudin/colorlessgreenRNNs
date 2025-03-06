@@ -30,7 +30,7 @@ results = {"original": [], "generated": []}
 
 # Loop over all model files
 for file in os.listdir(os.path.dirname(path_output)):
-    if file.startswith("generated.output_epoch"):
+    if file.startswith("generated.output_epoch_"):
         model = file.replace("generated.output_", "")
         print(f"Processing model: {model}")
         
@@ -79,6 +79,6 @@ for file in os.listdir(os.path.dirname(path_output)):
 for result_type, dfs in results.items():
     if dfs:
         final_df = pd.concat(dfs, ignore_index=True)
-        final_csv_path = os.path.join(path_results, f"{result_type}2_results.csv")
+        final_csv_path = os.path.join(path_results, f"{result_type}_total_results.csv")
         final_df.to_csv(final_csv_path, sep="\t", index=False)
         print(f"Results saved to {final_csv_path}")

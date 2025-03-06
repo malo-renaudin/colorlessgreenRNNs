@@ -3,7 +3,7 @@ import os
 import subprocess
 
 # Define the checkpoint directory
-checkpoints = '/scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/whole_model'
+checkpoints = '/scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/precise_checkpoint_first_ep'
 
 # Loop over all checkpoint files in the directory
 for file in os.listdir(checkpoints):

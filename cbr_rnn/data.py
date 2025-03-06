@@ -32,6 +32,7 @@ class Dataset(object):
                 curr_data = np.swapaxes(np.stack([datafile[k][x:x+chunk_size][reshuffle_train_idxs[i]] for i, x in enumerate(chunk_idxs)]), 0, 1)
             else:
                 curr_data = np.stack([datafile[k][x:x+batch_size] for x in chunk_idxs])
+                print(k)
                 
             if(k == 'input_masks'):
                 self.input_masks = torch.from_numpy(np.log(curr_data)).to(device)

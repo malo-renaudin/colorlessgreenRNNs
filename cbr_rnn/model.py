@@ -253,6 +253,8 @@ class CueBasedRNNModel(nn.Module):
                 else:
                     attn_scores = torch.bmm(key_cache.swapaxes(0,1), query_n).squeeze(dim=-1)
                 if(masks is not None):
+                    if attn_scores.shape[0]!=masks.shape[0]:
+                        masks = masks[:attn_scores.shape[0], ...]
                     masked_scores = attn_scores + masks[:,i,:i+1]
                 else:
                     masked_scores = attn_scores
