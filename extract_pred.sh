@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=nounpp_lstm # Job name
+#SBATCH --job-name=nounpp_rnn_relu # Job name
 #SBATCH --partition=gpu 
 #SBATCH --export=ALL 
 #SBATCH --cpus-per-task=6        # Number of CPU cores per task (adjust as needed)
@@ -21,4 +21,4 @@ echo "python-version $(python --version)"
 echo "CUDA_DEVICE: $CUDA_VISIBLE_DEVICES"
 conda list 
  
-python extract_predictions_several_check.py --checkpoints '/scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/full_check' -i '/scratch2/mrenaudin/colorlessgreenRNNs/NounPP/Stimuli/nounpp' --output '/scratch2/mrenaudin/colorlessgreenRNNs/NounPP/results.csv'
+python extract_predictions_several_check.py --checkpoints '/scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/rnn_relu' -i '/scratch2/mrenaudin/colorlessgreenRNNs/NounPP/Stimuli/nounpp' --output '/scratch2/mrenaudin/colorlessgreenRNNs/NounPP/results.csv'

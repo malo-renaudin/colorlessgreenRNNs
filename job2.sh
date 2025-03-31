@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=full_check # Job name
+#SBATCH --job-name=cbr_rnn # Job name
 #SBATCH --partition=gpu 
 #SBATCH --export=ALL 
 #SBATCH --cpus-per-task=6        # Number of CPU cores per task (adjust as needed)
@@ -21,4 +21,4 @@ echo "python-version $(python --version)"
 echo "CUDA_DEVICE: $CUDA_VISIBLE_DEVICES"
 conda list 
  
-python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name full_check  --batch_size 128 --nhid 650 --cuda
+python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name cbr_rnn  --batch_size 128 --nhid 650 --class 'CBR_RNN' --dropout 0.1 --lr 1.0 --cuda
