@@ -12,12 +12,12 @@ import h5py
 
 parser = argparse.ArgumentParser(
     description='PyTorch PennTreeBank RNN/LSTM Language Model')
-parser.add_argument('model', type=str, default='/scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/full_check/epoch_40.pt',
+parser.add_argument('model', type=str, default='/scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/rnn_relu/epoch_40.pt',
                     help='Meta file stored once finished training the corpus')
 parser.add_argument('-i', '--input', required=True,
                     help='Input sentences in Tal\'s format')
 parser.add_argument('-v', '--vocabulary', default='/scratch2/mrenaudin/colorlessgreenRNNs/english_data')
-parser.add_argument('-o', '--output', help='Destination for the output vectors')
+parser.add_argument('-o', '--output', default = 'results_rnn_relu', help='Destination for the output vectors')
 parser.add_argument('--perplexity', action='store_true', default=False)
 parser.add_argument('--eos-separator', default='</s>')
 parser.add_argument('--fixed-length-arrays', action='store_true', default=False,
@@ -28,6 +28,8 @@ parser.add_argument('--use-unk', action='store_true', default=False)
 parser.add_argument('--lang', default='en')
 parser.add_argument('--cuda', action='store_true', default=False)
 parser.add_argument('--uppercase-first-word', action='store_true', default=False)
+parser.add_argument('--batch-size', type=int, default=1, help='Batch size for processing sentences')
+
 args = parser.parse_args()
 
 stime = time.time()
@@ -57,7 +59,7 @@ gold = pandas.read_csv(args.input + '.gold', sep='\t', header=None, names=['verb
 print('Loading models...')
 from src.language_models.model import RNNModel as lstm
 print('\nmodel: ' + args.model+'\n')
-model = lstm('LSTM', 50001, 200, 650, 2, 0.2, False)
+model = lstm('RNN_RELU', 50001, 200, 650, 2, 0.2, False)
 with open(args.model, 'rb') as f:
     print("Loading the model")
     state_dict = torch.load(f, map_location='cuda' if args.cuda else 'cpu')
@@ -80,7 +82,7 @@ model.load_state_dict(model_orig_state)
 model.eval()
 stime = time.time()
 
-output_fn = args.output + '.abl'
+output_fn = 'results_rnn_relu.abl'#args.output + '.abl'
 
 
 if args.lang == 'en':
@@ -100,7 +102,8 @@ model.eval()
 hidden = model.init_hidden(1) 
 init_out, init_h = feed_sentence(model, hidden, init_sentence.split(" "))
 
-# Test: present prefix sentences and calculate probability of target verb.
+
+
 for i, s in enumerate(tqdm(sentences)):
     out = None
     # reinit hidden
@@ -112,8 +115,8 @@ for i, s in enumerate(tqdm(sentences)):
     #     inp = inp.cuda()
     # out, hidden = model(inp, hidden)
     # out = torch.nn.functional.log_softmax(out[0]).unsqueeze(0)
-    for j, w in enumerate(s):
-        if j==0 and args.uppercase_first_word:
+    for k, w in enumerate(s):
+        if k==0 and args.uppercase_first_word:
             w = w.capitalize()
 
         if w not in vocab.word2idx and args.use_unk:
@@ -123,8 +126,12 @@ for i, s in enumerate(tqdm(sentences)):
             inp = inp.cuda()
         out, hidden = model(inp, hidden)
         out = torch.nn.functional.log_softmax(out[0]).unsqueeze(0)
-        if j==gold.loc[i,'verb_pos']-1:
-            assert s[j+1] == gold.loc[i, 'correct'].lower()
+        if k==gold.loc[i,'verb_pos']-1:
+            if s[k+1] != gold.loc[i, 'correct'].lower():
+                print(s[k+1])
+                print(gold.loc[i, 'correct'].lower())
+                print(k+1 < len(s))
+            assert s[k+1] == gold.loc[i, 'correct'].lower()
             # Store surprisal of target word
             log_p_targets_correct[i] = out[0, 0, vocab.word2idx[gold.loc[i,'correct']]].data.item()
             log_p_targets_wrong[i] = out[0, 0, vocab.word2idx[gold.loc[i, 'wrong']]].data.item()

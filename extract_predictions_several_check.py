@@ -35,10 +35,11 @@ if os.path.isdir(checkpoint_dir):
     checkpoint_files = [os.path.join(checkpoint_dir, f) for f in os.listdir(checkpoint_dir) if f.endswith('.pth') or f.endswith('.pt')]  # Adjust file extensions as needed
 else:
     checkpoint_files = args.checkpoints  # If it's not a directory, treat it as a list of files
+    
+model = lstm('RNN_TANH', 50001, 200, 650, 2, 0.2, False)
 
 for checkpoint in checkpoint_files:
     print(f'Loading model: {checkpoint}')
-    model = lstm('LSTM', 50001, 200, 650, 2, 0.2, False)
     with open(checkpoint, 'rb') as f:
         state_dict = torch.load(f, map_location='cuda' if args.cuda else 'cpu')
         model.load_state_dict(state_dict)
@@ -49,24 +50,45 @@ for checkpoint in checkpoint_files:
     #condition_accuracies = {condition[0] + " & " + condition[1]: [] for condition in conditions}  # Create a dictionary for condition accuracies
     condition_accuracies = {condition: [] for condition in conditions}
 
-    for i, s in enumerate(tqdm(sentences)):
-        hidden = model.init_hidden(1)
-        for j, w in enumerate(s):
-            if w not in vocab.word2idx:
-                w = '<unk>'
-            inp = Variable(torch.LongTensor([[vocab.word2idx[w]]]))
-            if args.cuda:
-                inp = inp.cuda()
-            out, hidden = model(inp, hidden)
-            out = torch.nn.functional.log_softmax(out[0]).unsqueeze(0)
-            if j == gold.loc[i, 'verb_pos'] - 1:
-                log_p_targets_correct[i] = out[0, 0, vocab.word2idx[gold.loc[i,'correct']]].item()
-                log_p_targets_wrong[i] = out[0, 0, vocab.word2idx[gold.loc[i, 'wrong']]].item()
-        #####Problème ici !!!!! attention à condition[i]       
-        condition = conditions[i]
-        correct = log_p_targets_correct[i] > log_p_targets_wrong[i]
-        #condition_accuracies[condition[0]+ " & " + condition[1]].append(correct)
-        condition_accuracies[condition].append(correct)
+    mini_batch_size = 256 #adjust as needed.
+
+    with torch.no_grad():
+        for batch_start in tqdm(range(0, len(sentences), mini_batch_size)):
+            batch_end = min(batch_start + mini_batch_size, len(sentences))
+            batch_indices = range(batch_start, batch_end)
+
+            for i in batch_indices:
+                s = sentences[i]
+    #for i, s in enumerate(tqdm(sentences)):
+                target_pos = gold.loc[i, 'verb_pos'] - 1
+                hidden = model.init_hidden(1)
+                for j, w in enumerate(s[:target_pos]):
+                    if w not in vocab.word2idx:
+                        w = '<unk>'
+                    inp = Variable(torch.LongTensor([[vocab.word2idx[w]]]))
+                    if args.cuda:
+                        inp = inp.cuda()
+                    out, hidden = model(inp, hidden)
+                    out = torch.nn.functional.log_softmax(out[0]).unsqueeze(0)
+                    if j == gold.loc[i, 'verb_pos'] - 1:
+                        log_p_targets_correct[i] = out[0, 0, vocab.word2idx[gold.loc[i,'correct']]].items()
+                        log_p_targets_wrong[i] = out[0, 0, vocab.word2idx[gold.loc[i, 'wrong']]].item()
+                # Preprocess to replace unknown words
+                # s_idx = [vocab.word2idx.get(w, vocab.word2idx['<unk>']) for w in s]
+                # inp = Variable(torch.LongTensor([s_idx]))
+                # if args.cuda:
+                #     inp = inp.cuda()
+                # hidden = model.init_hidden(1)
+                # out, hidden = model(inp, hidden)
+                # out = torch.nn.functional.log_softmax(out[0]).unsqueeze(0)
+
+                # target_pos = gold.loc[i, 'verb_pos'] - 1
+                # log_p_targets_correct[i] = out[0, target_pos, vocab.word2idx[gold.loc[i, 'correct']]].item()
+                # log_p_targets_wrong[i] = out[0, target_pos, vocab.word2idx[gold.loc[i, 'wrong']]].item()
+
+                condition = conditions[i]
+                correct = log_p_targets_correct[i] > log_p_targets_wrong[i]
+                condition_accuracies[condition].append(correct)
 
     condition_accuracy_results = {condition: np.mean(condition_accuracies[condition]) * 100 for condition in condition_accuracies}
     checkpoint_results = {'checkpoint': checkpoint}

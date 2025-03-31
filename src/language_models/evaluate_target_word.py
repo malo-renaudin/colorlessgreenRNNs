@@ -50,6 +50,7 @@ def evaluate(data_source, mask):
         for i in range(0, data_source.size(0) - 1, seq_len):
             # keep continuous hidden state across all sentences in the input file
             data, targets = get_batch(data_source, i, seq_len)
+
             data, targets = data.long().to(device), targets.long().to(device)
             _, targets_mask = get_batch(mask, i, seq_len)
             output, hidden = model(data, hidden)
@@ -132,8 +133,9 @@ print("Computing probabilities for target words")
 index_col = 0
 
 mask = create_target_mask(args.path + ".text", args.path + ".eval", index_col)
+print(mask.shape)
+print(mask)
 mask_data = batchify(torch.LongTensor(mask), eval_batch_size, device)
-print("mask data", mask_data.size(0))
 test_data = batchify(dictionary_corpus.tokenize(dictionary, args.path + ".text"), eval_batch_size, device)
 
 

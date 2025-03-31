@@ -20,8 +20,8 @@ device = torch.device("cuda" if args.cuda else "cpu")
 eval_batch_size = 1
 total_correct = 0
 total_count = 0
-
-dictionary = Dictionary("/scratch2/mrenaudin/colorlessgreenRNNs/NounPP/Stimuli")
+training_data = "/scratch2/mrenaudin/colorlessgreenRNNs/english_data"
+dictionary = Dictionary(training_data)
 vocab_size = len(dictionary)
 eval_batch_size = 1
 seq_len=6
@@ -47,12 +47,19 @@ num_sentences = test_data.size(0) // seq_len
 test_data = test_data.view(num_sentences, seq_len).to(device)
 model = RNNModel('LSTM', 50001, 200, 650, 2, 0.2, False)
 model = model.to(device)
-with open("/scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/full_check/epoch_10.pt", 'rb') as f:
-      print("Loading the model")
-      state_dict = torch.load(f, map_location='cuda' if args.cuda else 'cpu')
-      model.load_state_dict(state_dict)
-model =model.to(device)
+with open("/scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/full_check/epoch_40.pt", 'rb') as f:
+    print("Loading the model")
+    #uncomment with my checkpointing, here try with their checkpointing to see if results match
+    state_dict = torch.load(f, map_location='cuda' if args.cuda else 'cpu')
+    model.load_state_dict(state_dict)
+
+    # if args.cuda:
+    #     model = torch.load(f)
+    # else:
+    #     # to convert model trained on cuda to cpu model
+    #     model = torch.load(f, map_location = lambda storage, loc: storage)
 model.eval()  # Set model to evaluation mode
+model = model.to(device)
 condition_correct_counts = {}  # Tracks correct predictions per condition
 condition_total_counts = {} 
 with torch.no_grad():  # Disable gradient computation for evaluation
@@ -63,8 +70,13 @@ with torch.no_grad():  # Disable gradient computation for evaluation
         # Get correct & incorrect verb from verb_pairs
         correct_verb, incorrect_verb = verb_pairs[i]
         # Convert words to token IDs
-        correct_verb_id = torch.tensor(dictionary.word2idx[correct_verb]).to(device)  
-        incorrect_verb_id = torch.tensor(dictionary.word2idx[incorrect_verb]).to(device)  
+        if correct_verb in dictionary.word2idx and incorrect_verb in dictionary.word2idx:
+
+            correct_verb_id = torch.tensor(dictionary.word2idx[correct_verb]).to(device)  
+            incorrect_verb_id = torch.tensor(dictionary.word2idx[incorrect_verb]).to(device)  
+        else : 
+            print('pb')
+            continue
         condition = conditions[i]
         # Mask last word and run model
         hidden = move_to_device(model.init_hidden(eval_batch_size), device)
@@ -73,7 +85,7 @@ with torch.no_grad():  # Disable gradient computation for evaluation
         output, hidden = model(sentence, hidden)  # Forward pass
         
         # Extract logits for the last word position
-        output_probs = torch.softmax(output[:, -1, :], dim=-1).to(device)  # Convert logits to probabilities
+        output_probs = F.log_softmax(output[:, -1, :], dim=-1).to(device)  # Convert logits to probabilities
         # Compare probabilities for correct & incorrect verbs
         prob_correct = output_probs[0, correct_verb_id].item()
         prob_incorrect = output_probs[0, incorrect_verb_id].item()
