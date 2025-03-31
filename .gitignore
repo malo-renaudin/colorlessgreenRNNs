@@ -8,3 +8,12 @@ checkpoints/
 datah5/
 data/
 val_loss/
+*.pt
+NounPP/
+.gitignore
+long_range/
+results/
+*.sh
+*.csv
+*.txt
+*.log
