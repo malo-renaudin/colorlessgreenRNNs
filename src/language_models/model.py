@@ -8,6 +8,7 @@
 import torch.nn as nn
 import torch.utils.data.dataloader
 from torch.nn.functional import scaled_dot_product_attention
+import numpy as np
 
 
 class RNNModel(nn.Module):
@@ -110,69 +111,34 @@ class CBR_RNN(nn.module):
 
     def forward(self, observation, initial_cache, attention_mask=None):
         # Get dimensions
-        seq_len, batch_size = observation.size(0), observation.size(1) if len(observation.size()) > 1 else 1
+        seq_len = observation.size(0) #if len(observation.size()) > 1 else 1
         # Unpack initial cache
         hidden, key_cache, value_cache = initial_cache
         # 1. Encode observations
         emb = self.drop(self.encoder(observation))
         # Process sequence : is there another more efficient way to compute causal attention than looping ?
-        for i in range(seq_len):
+        for i in range(seq_len): #need to keep sequential processing as the core structure is recurrent (each new word needs the hidden state obtained after prediction of the last word)
             # 2. Concatenate with previous hidden state
             query = self.drop(self.tanh(self.q_norm(self.q(torch.cat((emb[i],hidden[i]), -1))))) #b * d
             query_n = query.unsqueeze(-1) #b * n * 1
             
-            # 3. Attention mechanism
-            # Prepare query, key, and value tensors
-            k = all_keys[:i+1].permute(1, 0, 2)  # [batch_size, i+1, nhid]
-            v = all_values[:i+1].permute(1, 0, 2)  # [batch_size, i+1, nhid]
-            
-            # Create attention mask if provided
-            attn_mask = None
-            if attention_mask is not None:
-                attn_mask = attention_mask[:, i, :i+1]
-            
-            # Apply attention
+            # Apply attention : for the mask we directly use the causal attention mask from pytorch here
             attn_output = scaled_dot_product_attention(
-                q, k, v,
-                attn_mask=attn_mask,
-                dropout_p=self.dropout.p if self.training else 0.0,
-                is_causal=False
+                query_n, key_cache, value_cache,
+                is_causal=True
             )
+            print(attn_output.shape)
             
-            attn_output = attn_output.squeeze(1)  # [batch_size, nhid]
+            intermediate = self.drop(self.tanh(self.int_norm(self.intermediate_h(torch.cat((emb[i],query,attn_output,hidden[i]),-1)))))
+            key_cache_i, value_cache_i, hidden_i = self.drop(self.tanh(self.f_norm(self.final_h(intermediate)))).split(self.nhid, dim=-1)
             
-            # 4. Feed-forward (combine attention with query)
-            combined_attn = self.dropout(attn_output + query)  # Residual connection
             
-            # 5. Split to key, value, hidden
-            outputs = self.dropout(self.activation(self.ff2(combined_attn)))
-            outputs = self.norm3(outputs)
+            hidden = torch.cat((hidden, hidden_i.unsqueeze(0)), dim=0)
+            key_cache = torch.cat((key_cache, key_cache_i.unsqueeze(0)), dim=0)
+            value_cache = torch.cat((value_cache, value_cache_i.unsqueeze(0)), dim=0)
             
-            # Split into key, value, hidden
-            key_i, value_i, hidden_i = outputs.chunk(3, dim=-1)
-            
-            # Store results
-            all_hidden[i+1] = hidden_i
-            all_keys[i+1] = key_i
-            all_values[i+1] = value_i
+          
+        output = hidden[1:]
+        decoded = self.decoder(output)
         
-        # Compute outputs
-        output_hidden = all_hidden[1:]  # Remove initial state
-        decoded = self.decoder(output_hidden)
-        
-        # Prepare final state for next iteration
-        final_cache = (
-            all_hidden[-1:],  # Just the last hidden state
-            all_keys[-1:],    # Just the last key
-            all_values[-1:]   # Just the last value
-        )
-        
-        return decoded, final_cache
-    
-    def init_cache(self, batch_size=1):
-        """Initialize cache for a new sequence"""
-        return (
-            torch.zeros(1, batch_size, self.nhid, device=self.device),
-            torch.zeros(1, batch_size, self.nhid, device=self.device), 
-            torch.zeros(1, batch_size, self.nhid, device=self.device)
-        )
+        return decoded, hidden
