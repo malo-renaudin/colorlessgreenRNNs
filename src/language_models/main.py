@@ -67,7 +67,10 @@ criterion = nn.CrossEntropyLoss()
 
 logging.info("Building the model")
 
-model = model.RNNModel(args.model, ntokens, args.emsize, args.nhid, args.nlayers, args.dropout, args.tied)
+if args.classmodel == 'CBR_RNN':
+    model = model.CBR_RNN(ntokens, args.emsize, args.nhid, args.dropout)
+else:
+    model = model.RNNModel(args.model, ntokens, args.emsize, args.nhid, args.nlayers, args.dropout, args.tied)
 #NEW : changed model.cuda() to model.to(device)
 if args.cuda:
     #model.cuda()
@@ -125,8 +128,12 @@ def train():
         hidden = repackage_hidden(hidden)
         model.zero_grad()
         output, hidden = model(data, hidden)
-
-        loss = criterion(output.view(-1, ntokens), targets)
+        if args.classmodel == 'CBR_RNN':
+            output_flat = output.reshape(-1, output.size(-1))
+            targets_flat = targets.reshape(-1)
+            loss=criterion(output_flat, targets_flat)
+        else :
+            loss = criterion(output.view(-1, ntokens), targets)
         loss.backward()
 
         # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.

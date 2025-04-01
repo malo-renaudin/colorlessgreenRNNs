@@ -72,18 +72,18 @@ class RNNModel(nn.Module):
         else:
             return weight.new(self.nlayers, bsz, self.nhid).zero_()
 
-class CBR_RNN(nn.module): 
+class CBR_RNN(nn.Module): 
 # goal here is to reuse CBR_RNN but with scaled dot product attention for more efficient computations. 
 # Also I got rid of options such as loading pretrained embeddings, and ablating attention to simplify the code.
 # In the future if those options are needed, they can still be copy pasted from William's code as the structure hasn't changed
-    def __init__(self, ntoken, ninp, nhid, dropout=0.5, tie_weights=False, embedding_file=None, device=None):
+    def __init__(self, ntoken, ninp, nhid, dropout=0.5, device=None):
         super().__init__()
         #same layers as Timkey
         self.device = device
         self.tanh = nn.Tanh()
         self.drop = nn.Dropout(dropout)
         self.score_attn = nn.Softmax(dim=-1)
-        self.encoder = nn.Embedding(ntoken+1, ninp)
+        self.encoder = nn.Embedding(ntoken, ninp)
         self.q = nn.Linear(ninp+nhid,nhid)
         self.intermediate_h = nn.Linear(nhid*4,nhid*4)
         self.decoder = nn.Linear(nhid, ntoken+1)
@@ -92,6 +92,7 @@ class CBR_RNN(nn.module):
         self.f_norm = torch.nn.LayerNorm(nhid * 3)  
         self.nhid = nhid
         self.attn_div_factor = np.sqrt(nhid)
+        self.final_h = nn.Linear(nhid*4,nhid*3)
         
         
     #same weight initialization as Timkey
@@ -107,38 +108,50 @@ class CBR_RNN(nn.module):
             self.aux_decoder.weight.data.uniform_(-initrange, initrange)
 
     
+    def init_hidden(self, bsz):
+        """ Initialize a fresh hidden state """
+        weight = next(self.parameters()).data
     
+        return torch.tensor(weight.new(bsz, self.nhid).zero_())
+    
+    def init_cache(self, observation):
+        if len(observation.size())>1:
+            bsz = observation.size(dim=-1)
+        else:
+            bsz = 1
+        seq_len = observation.size(dim=0)
+
+        return torch.zeros(1, bsz, self.nhid).to(self.device), torch.zeros(1, bsz, self.nhid).to(self.device), torch.zeros(1, bsz, self.nhid).to(self.device)
+
 
     def forward(self, observation, initial_cache, attention_mask=None):
         # Get dimensions
         seq_len = observation.size(0) #if len(observation.size()) > 1 else 1
         # Unpack initial cache
         hidden, key_cache, value_cache = initial_cache
+        
         # 1. Encode observations
         emb = self.drop(self.encoder(observation))
         # Process sequence : is there another more efficient way to compute causal attention than looping ?
         for i in range(seq_len): #need to keep sequential processing as the core structure is recurrent (each new word needs the hidden state obtained after prediction of the last word)
             # 2. Concatenate with previous hidden state
-            query = self.drop(self.tanh(self.q_norm(self.q(torch.cat((emb[i],hidden[i]), -1))))) #b * d
-            query_n = query.unsqueeze(-1) #b * n * 1
             
-            # Apply attention : for the mask we directly use the causal attention mask from pytorch here
+            query = self.drop(self.tanh(self.q_norm(self.q(torch.cat((emb[i],hidden[i]), -1))))) #b * d
+            query = query.unsqueeze(1) 
             attn_output = scaled_dot_product_attention(
-                query_n, key_cache, value_cache,
+                query, key_cache.transpose(0, 1), value_cache.transpose(0, 1),#batch dimension needs to be the first one, hence the transpose (and the unsuqeeze on the query), second dim is seq len
                 is_causal=True
             )
-            print(attn_output.shape)
-            
-            intermediate = self.drop(self.tanh(self.int_norm(self.intermediate_h(torch.cat((emb[i],query,attn_output,hidden[i]),-1)))))
+            attn = attn_output.squeeze(1)
+          
+            intermediate = self.drop(self.tanh(self.int_norm(self.intermediate_h(torch.cat((emb[i],query.squeeze(1),attn,hidden[i]),-1)))))
             key_cache_i, value_cache_i, hidden_i = self.drop(self.tanh(self.f_norm(self.final_h(intermediate)))).split(self.nhid, dim=-1)
-            
             
             hidden = torch.cat((hidden, hidden_i.unsqueeze(0)), dim=0)
             key_cache = torch.cat((key_cache, key_cache_i.unsqueeze(0)), dim=0)
+
             value_cache = torch.cat((value_cache, value_cache_i.unsqueeze(0)), dim=0)
-            
           
-        output = hidden[1:]
-        decoded = self.decoder(output)
+        decoded = self.decoder(hidden[1:])
         
         return decoded, hidden
