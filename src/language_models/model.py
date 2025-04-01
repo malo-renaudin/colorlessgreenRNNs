@@ -76,7 +76,7 @@ class CBR_RNN(nn.Module):
 # goal here is to reuse CBR_RNN but with scaled dot product attention for more efficient computations. 
 # Also I got rid of options such as loading pretrained embeddings, and ablating attention to simplify the code.
 # In the future if those options are needed, they can still be copy pasted from William's code as the structure hasn't changed
-    def __init__(self, ntoken, ninp, nhid, dropout=0.5, device=None):
+    def __init__(self, ntoken, ninp, nhid, device, dropout=0.5):
         super().__init__()
         #same layers as Timkey
         self.device = device
@@ -124,11 +124,15 @@ class CBR_RNN(nn.Module):
         return torch.zeros(1, bsz, self.nhid).to(self.device), torch.zeros(1, bsz, self.nhid).to(self.device), torch.zeros(1, bsz, self.nhid).to(self.device)
 
 
-    def forward(self, observation, initial_cache, attention_mask=None):
+    def forward(self, observation, initial_cache):
         # Get dimensions
         seq_len = observation.size(0) #if len(observation.size()) > 1 else 1
         # Unpack initial cache
-        hidden, key_cache, value_cache = initial_cache
+        hidden, key_cache, value_cache = initial_cache #hidden is initialized as the query and updated at each time step
+        print(f'observation device: {observation.device}')
+        print(f"initial_cache hidden device: {hidden.device}")
+        print(f"initial_cache key_cache device: {key_cache.device}")
+        print(f"initial_cache value_cache device: {value_cache.device}")
         
         # 1. Encode observations
         emb = self.drop(self.encoder(observation))

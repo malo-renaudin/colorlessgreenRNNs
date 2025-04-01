@@ -68,13 +68,10 @@ criterion = nn.CrossEntropyLoss()
 logging.info("Building the model")
 
 if args.classmodel == 'CBR_RNN':
-    model = model.CBR_RNN(ntokens, args.emsize, args.nhid, args.dropout)
+    model = model.CBR_RNN(ntokens, args.emsize, args.nhid, device, args.dropout)
 else:
-    model = model.RNNModel(args.model, ntokens, args.emsize, args.nhid, args.nlayers, args.dropout, args.tied)
-#NEW : changed model.cuda() to model.to(device)
-if args.cuda:
-    #model.cuda()
-    model = model.to(device)
+    model = model.RNNModel(args.model, ntokens, args.emsize, args.nhid, args.nlayers, args.dropout, args.tied).to(device)
+
 
 
 
@@ -117,22 +114,26 @@ def train():
     total_loss = 0
     start_time = time.time()
     #NEW : move hidden to devide
-    hidden = move_to_device(model.init_hidden(args.batch_size), device)
-
+    if args.classmodel != 'CBR_RNN':
+        hidden = move_to_device(model.init_hidden(args.batch_size), device)
+    
     for batch, i in enumerate(range(0, train_data.size(0) - 1, args.bptt)):
         data, targets = get_batch(train_data, i, args.bptt)
         #NEW : move data and target to device
         data, targets = data.to(device), targets.to(device)
-
-        # truncated BPP
-        hidden = repackage_hidden(hidden)
         model.zero_grad()
-        output, hidden = model(data, hidden)
         if args.classmodel == 'CBR_RNN':
+            cache = model.init_cache(data) #initialization concerns query (=hidden in this case), key and value and not just hidden state
+            #also initialization is done by batch with attention mechanism to ensure independence between sentences, 
+            #temporal dependency is maintained through caching.
+            #Differently, lstm maintains an hidden state through all the training
+            output, hidden = model(data, cache)
             output_flat = output.reshape(-1, output.size(-1))
             targets_flat = targets.reshape(-1)
             loss=criterion(output_flat, targets_flat)
         else :
+            hidden = repackage_hidden(hidden)#initialization is just about hidden state
+            output, hidden = model(data, hidden)
             loss = criterion(output.view(-1, ntokens), targets)
         loss.backward()
 
