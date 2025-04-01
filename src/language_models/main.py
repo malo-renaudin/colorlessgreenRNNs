@@ -68,7 +68,7 @@ criterion = nn.CrossEntropyLoss()
 logging.info("Building the model")
 
 if args.classmodel == 'CBR_RNN':
-    model = model.CBR_RNN(ntokens, args.emsize, args.nhid, device, args.dropout)
+    model = model.CBR_RNN(ntokens, args.emsize, args.nhid, device, args.dropout).to(device)
 else:
     model = model.RNNModel(args.model, ntokens, args.emsize, args.nhid, args.nlayers, args.dropout, args.tied).to(device)
 
