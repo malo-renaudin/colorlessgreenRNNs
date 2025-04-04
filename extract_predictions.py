@@ -113,7 +113,7 @@ model.load_state_dict(model_orig_state)
 model.eval()
 stime = time.time()
 
-output_fn = args.output + ".abl"
+output_fn = "epoch_0.abl"  # args.output + ".abl"
 
 
 if args.lang == "en":
