@@ -146,12 +146,9 @@ class CBR_RNN(nn.Module):
         hidden, key_cache, value_cache = (
             initial_cache  # hidden is initialized as the query and updated at each time step
         )
-        print("hidden", hidden.shape)
-        print("key_cache", key_cache.shape)
-        print("value_cache", value_cache.shape)
+
         # 1. Encode observations
         emb = self.drop(self.encoder(observation))
-        print("emb", emb.shape)
         # Process sequence : is there another more efficient way to compute causal attention than looping ?
         for i in range(
             seq_len
@@ -161,9 +158,7 @@ class CBR_RNN(nn.Module):
             query = self.drop(
                 self.tanh(self.q_norm(self.q(torch.cat((emb[i], hidden[i]), -1))))
             )  # b * d
-            print("query", query.shape)
             query = query.unsqueeze(1)
-            print("query unsqueezed", query.shape)
             attn_output = scaled_dot_product_attention(
                 query,
                 key_cache.transpose(0, 1),
@@ -172,12 +167,7 @@ class CBR_RNN(nn.Module):
                 ),  # batch dimension needs to be the first one, hence the transpose (and the unsuqeeze on the query), second dim is seq len
                 is_causal=True,
             )
-            print("attn_output", attn_output.shape)
             attn = attn_output.squeeze(1)
-            print("emb[i]", emb[i].shape)
-            print("query.squeeze(1)", query.squeeze(1).shape)
-            print("attn", attn.shape)
-            print("hidden[i]", hidden[i].shape)
 
             intermediate = self.drop(
                 self.tanh(

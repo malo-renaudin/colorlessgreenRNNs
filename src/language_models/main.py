@@ -110,13 +110,24 @@ def evaluate(data_source):
             # NEW : move data and targets to device
             data, targets = data.to(device), targets.to(device)
             # > output has size seq_length x batch_size x vocab_size
-            output, hidden = model(data, hidden)
-            # > output_flat has size num_targets x vocab_size (batches are stacked together)
-            # > ! important, otherwise softmax computation (e.g. with F.softmax()) is incorrect
-            output_flat = output.view(-1, ntokens)
-            # output_candidates_info(output_flat.data, targets.data)
-            total_loss += len(data) * nn.CrossEntropyLoss()(output_flat, targets).item()
-            hidden = repackage_hidden(hidden)
+            if args.classmodel == "CBR_RNN":
+                cache = model.init_cache(data)
+                output, hidden = model(data, cache)
+                output_flat = output.reshape(-1, output.size(-1))
+                targets_flat = targets.reshape(-1)
+                total_loss += (
+                    len(data) * nn.CrossEntropyLoss()(output_flat, targets_flat).item()
+                )
+            else:
+                output, hidden = model(data, hidden)
+                # > output_flat has size num_targets x vocab_size (batches are stacked together)
+                # > ! important, otherwise softmax computation (e.g. with F.softmax()) is incorrect
+                output_flat = output.view(-1, ntokens)
+                # output_candidates_info(output_flat.data, targets.data)
+                total_loss += (
+                    len(data) * nn.CrossEntropyLoss()(output_flat, targets).item()
+                )
+                hidden = repackage_hidden(hidden)
 
     return total_loss / (len(data_source) - 1)
 
@@ -134,8 +145,8 @@ def train():
     total_loss = 0
     start_time = time.time()
     # NEW : move hidden to devide
-    if args.classmodel != "CBR_RNN":
-        hidden = move_to_device(model.init_hidden(args.batch_size), device)
+    # if args.classmodel != "CBR_RNN":
+    #     hidden = move_to_device(model.init_hidden(args.batch_size), device)
     if epoch == 1:
         save_checkpoint(model, args.name, epoch, 0)
         logging.info(
@@ -165,7 +176,7 @@ def train():
             output, hidden = model(data, hidden)
             loss = criterion(output.view(-1, ntokens), targets)
         loss.backward()
-
+        # try with an optimizer
         # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
         torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
         for p in model.parameters():
