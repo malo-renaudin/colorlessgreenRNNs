@@ -106,11 +106,13 @@ class CBR_RNN(nn.Module):
         self.nhid = nhid
         self.attn_div_factor = np.sqrt(nhid)
         self.final_h = nn.Linear(nhid * 4, nhid * 3)
-        # for multihead attention
-        self.multihead_attn = nn.MultiheadAttention(
-            embed_dim=nhid, num_heads=nheads, batch_first=True
-        )
         self.nheads = nheads
+
+        # for multihead attention
+        if self.nheads > 1:
+            self.multihead_attn = nn.MultiheadAttention(
+                embed_dim=nhid, num_heads=nheads, batch_first=True
+            )
 
     # same weight initialization as Timkey
     def init_weights(self, freeze_embedding, aux_objective):

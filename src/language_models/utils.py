@@ -85,13 +85,13 @@ def load_model(
     tied,
     checkpoint_path,
 ):
-    import model
+    import model as m
 
     if classmodel == "RNNModel":
-        model = model.RNNModel(model, ntokens, emsize, nhid, nlayers, dropout, tied)
+        model = m.RNNModel(model, ntokens, emsize, nhid, nlayers, dropout, tied)
 
     elif classmodel == "CBR_RNN":
-        model = model.CBR_RNN(ntokens, emsize, nhid, device, nheads, dropout)
+        model = m.CBR_RNN(ntokens, emsize, nhid, device, nheads, dropout)
 
     if checkpoint_path:
         with open(checkpoint_path, "rb") as f:

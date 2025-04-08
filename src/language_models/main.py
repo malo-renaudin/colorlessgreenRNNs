@@ -26,6 +26,8 @@ from utils import (
     load_model,
 )
 import torch.profiler
+import torch.optim as optim
+
 
 parser = argparse.ArgumentParser(
     parents=[lm_parser], description="Basic training and evaluation for RNN LM"
@@ -76,31 +78,7 @@ criterion = nn.CrossEntropyLoss()
 ###############################################################################
 
 logging.info("Building the model")
-# add an option to load a model here :
-# if args.checkpoint_path :
-#   model = model.args.classmodel(args.model, 50001, 200, 650, 2, 0.2, False)
-#   with open(args.checkpoint_path, 'rb') as f:
-#       state_dict = torch.load(f, map_location='cuda' if device =='cuda' else 'cpu')
-#       model.load_state_dict(state_dict)
-#   model.to(device)
-# else :
-
-# if args.classmodel == "CBR_RNN":
-#     model = model.CBR_RNN(
-#         ntokens, args.emsize, args.nhid, device, args.nheads, args.dropout
-#     ).to(
-#         device
-#     )  # rajouter argument nheads
-# else:
-#     model = model.RNNModel(
-#         args.model,
-#         ntokens,
-#         args.emsize,
-#         args.nhid,
-#         args.nlayers,
-#         args.dropout,
-#         args.tied,
-#     ).to(device)
+print(args.model)
 model = load_model(
     args.classmodel,
     args.model,
@@ -171,24 +149,20 @@ def train():
     # NEW : move hidden to devide
     if args.classmodel != "CBR_RNN":
         hidden = move_to_device(model.init_hidden(args.batch_size), device)
-    # if epoch == 1:
-    #     save_checkpoint(model, args.name, epoch, 0)
-    #     logging.info(
-    #         f"Checkpoint saved before the first batch: epoch {epoch}, batch {0}"
-    #     )
-
+    if epoch == 1:
+        save_checkpoint(model, args.name, epoch, 0)
+        logging.info(
+            f"Checkpoint saved before the first batch: epoch {epoch}, batch {0}"
+        )
+    optimizer = optim.Adam(model.parameters(), lr=args.lr)
     for batch, i in enumerate(range(0, train_data.size(0) - 1, args.bptt)):
         data, targets = get_batch(train_data, i, args.bptt)
         # NEW : move data and target to device
         data, targets = data.to(device), targets.to(device)
-        model.zero_grad()
+        # model.zero_grad()
+        optimizer.zero_grad()
         if args.classmodel == "CBR_RNN":
-            cache = model.init_cache(
-                data
-            )  # initialization concerns query (=hidden in this case), key and value and not just hidden state
-            # also initialization is done by batch with attention mechanism to ensure independence between sentences,
-            # temporal dependency is maintained through caching.
-            # Differently, lstm maintains an hidden state through all the training
+            cache = model.init_cache(data)
             output, hidden = model(data, cache, args.nheads)
             output_flat = output.reshape(-1, output.size(-1))
             targets_flat = targets.reshape(-1)
@@ -200,39 +174,10 @@ def train():
             output, hidden = model(data, hidden)
             loss = criterion(output.view(-1, ntokens), targets)
         loss.backward()
-        # try with an optimizer
-        # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
         torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
-        for p in model.parameters():
-            p.data.add_(-lr, p.grad.data)
+        optimizer.step()
 
         total_loss += loss.item()
-        # NEW : added checkpointing
-        # checkpointing every batch for the 5 first epochs
-        # if epoch <= 1 and batch % 10 == 0 and batch <= 300:
-        #     save_checkpoint(model, args.name, epoch, batch)
-        #     val_loss = evaluate(val_data)
-        #     filename = f"epoch{epoch}_batch{batch}"
-        #     logging.info(
-        #         "| epoch {:3d} | {:5d}/{:5d} batches | val_loss{:5.2f}".format(
-        #             epoch, batch, len(train_data) // args.bptt, val_loss
-        #         )
-        #     )
-        #     val_loss_data.append({"epoch": epoch, "batch": batch, "val_loss": val_loss})
-        #     save_val_loss_data(val_loss_data, subfolder, filename)
-        #     model.train()
-        # if epoch <= 2 and batch % 100 == 0:
-        #     save_checkpoint(model, args.name, epoch, batch)
-        #     val_loss = evaluate(val_data)
-        #     filename = f"epoch{epoch}_batch{batch}"
-        #     logging.info(
-        #         "| epoch {:3d} | {:5d}/{:5d} batches | val_loss{:5.2f}".format(
-        #             epoch, batch, len(train_data) // args.bptt, val_loss
-        #         )
-        #     )
-        #     val_loss_data.append({"epoch": epoch, "batch": batch, "val_loss": val_loss})
-        #     save_val_loss_data(val_loss_data, subfolder, filename)
-        #     model.train()
 
         # nouvelle version
         if args.checkpoint_path:
@@ -254,7 +199,7 @@ def train():
             cur_loss = total_loss / args.log_interval
             elapsed = time.time() - start_time
             logging.info(
-                "| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.2f} | ms/batch {:5.2f} | "
+                "| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.4f} | ms/batch {:5.2f} | "
                 "loss {:5.2f} | ppl {:8.2f}".format(
                     epoch,
                     batch,
@@ -275,9 +220,11 @@ best_val_loss = None
 
 # At any point you can hit Ctrl + C to break out of training early.
 try:
-    # if args.epoch_checkpointed :
-    #   for epoch in range (args.epoch_checkpointed, args.epochs+1)
-    for epoch in range(1, args.epochs + 1):
+    if args.epoch_checkpointed:
+        k = args.epoch_checkpointed
+    else:
+        k = 1
+    for epoch in range(k, args.epochs + 1):
         epoch_start_time = time.time()
 
         train()
@@ -304,14 +251,14 @@ try:
         filename = f"epoch{epoch}"
         save_val_loss_data(val_loss_data, subfolder, filename)
         model.train()
-        # Save the model if the validation loss is the best we've seen so far.
-        if not best_val_loss or val_loss < best_val_loss:
-            with open(args.save, "wb") as f:
-                torch.save(model, f)
-            best_val_loss = val_loss
-        else:
-            # Anneal the learning rate if no improvement has been seen in the validation dataset.
-            lr /= 4.0
+        # # Save the model if the validation loss is the best we've seen so far.
+        # if not best_val_loss or val_loss < best_val_loss:
+        #     with open(args.save, "wb") as f:
+        #         torch.save(model, f)
+        #     best_val_loss = val_loss
+        # else:
+        #     # Anneal the learning rate if no improvement has been seen in the validation dataset.
+        #     lr /= 4.0
 except KeyboardInterrupt:
     logging.info("-" * 89)
     logging.info("Exiting from training early")

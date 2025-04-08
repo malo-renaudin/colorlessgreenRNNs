@@ -62,7 +62,7 @@ lm_parser.add_argument(
 lm_parser.add_argument(
     "--nheads",
     type=int,
-    default=None,
+    default=1,
     help="number of attention heads in the CBR_RNN model",
 )
 
@@ -84,4 +84,10 @@ lm_parser.add_argument(
     type=int,
     default=1000,
     help="if batch_check=n, checkpoints will be saved each n batches within an epoch",
+)
+lm_parser.add_argument(
+    "--epoch_checkpointed",
+    type=checkpoint_path_or_false,
+    default=None,
+    help="number of the epoch for input checkpoint",
 )
