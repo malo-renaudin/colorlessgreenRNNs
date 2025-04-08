@@ -89,7 +89,7 @@ class CBR_RNN(nn.Module):
     # goal here is to reuse CBR_RNN but with scaled dot product attention for more efficient computations.
     # Also I got rid of options such as loading pretrained embeddings, and ablating attention to simplify the code.
     # In the future if those options are needed, they can still be copy pasted from William's code as the structure hasn't changed
-    def __init__(self, ntoken, ninp, nhid, device, dropout=0.5):
+    def __init__(self, ntoken, ninp, nhid, device, nheads, dropout=0.5):
         super().__init__()
         # same layers as Timkey
         self.device = device
@@ -106,6 +106,11 @@ class CBR_RNN(nn.Module):
         self.nhid = nhid
         self.attn_div_factor = np.sqrt(nhid)
         self.final_h = nn.Linear(nhid * 4, nhid * 3)
+        # for multihead attention
+        self.multihead_attn = nn.MultiheadAttention(
+            embed_dim=nhid, num_heads=nheads, batch_first=True
+        )
+        self.nheads = nheads
 
     # same weight initialization as Timkey
     def init_weights(self, freeze_embedding, aux_objective):
@@ -119,11 +124,11 @@ class CBR_RNN(nn.Module):
             self.aux_decoder.bias.data.fill_(0)
             self.aux_decoder.weight.data.uniform_(-initrange, initrange)
 
-    def init_hidden(self, bsz):
-        """Initialize a fresh hidden state"""
-        weight = next(self.parameters()).data
+    # def init_hidden(self, bsz):
+    #     """Initialize a fresh hidden state"""
+    #     weight = next(self.parameters()).data
 
-        return torch.tensor(weight.new(bsz, self.nhid).zero_())
+    #     return torch.tensor(weight.new(bsz, self.nhid).zero_())
 
     def init_cache(self, observation):
         if len(observation.size()) > 1:
@@ -138,7 +143,7 @@ class CBR_RNN(nn.Module):
             torch.zeros(1, bsz, self.nhid).to(self.device),
         )
 
-    def forward(self, observation, initial_cache):
+    def forward(self, observation, initial_cache, nheads):
         # Get dimensions
         seq_len = observation.size(0)  # if len(observation.size()) > 1 else 1
         observation = observation.to(self.device)
@@ -159,25 +164,52 @@ class CBR_RNN(nn.Module):
                 self.tanh(self.q_norm(self.q(torch.cat((emb[i], hidden[i]), -1))))
             )  # b * d
             query = query.unsqueeze(1)
-            attn_output = scaled_dot_product_attention(
-                query,
-                key_cache.transpose(0, 1),
-                value_cache.transpose(
-                    0, 1
-                ),  # batch dimension needs to be the first one, hence the transpose (and the unsuqeeze on the query), second dim is seq len
-                is_causal=True,
-            )
-            attn = attn_output.squeeze(1)
+            if nheads == 1:
+                attn_output = scaled_dot_product_attention(
+                    query,
+                    key_cache.transpose(0, 1),
+                    value_cache.transpose(
+                        0, 1
+                    ),  # batch dimension needs to be the first one, hence the transpose (and the unsuqeeze on the query), second dim is seq len
+                    is_causal=True,
+                )
+                attn = attn_output.squeeze(1)
 
-            intermediate = self.drop(
-                self.tanh(
-                    self.int_norm(
-                        self.intermediate_h(
-                            torch.cat((emb[i], query.squeeze(1), attn, hidden[i]), -1)
+                intermediate = self.drop(
+                    self.tanh(
+                        self.int_norm(
+                            self.intermediate_h(
+                                torch.cat(
+                                    (emb[i], query.squeeze(1), attn, hidden[i]), -1
+                                )
+                            )
                         )
                     )
                 )
-            )
+            else:
+                attn_output = self.multihead_attn(
+                    query, key_cache.transpose(0, 1), value_cache.transpose(0, 1)
+                )
+                # outputs attn output and attn output weights
+                attn = attn_output[0]  # .squeeze(1)
+                intermediate = self.drop(
+                    self.tanh(
+                        self.int_norm(
+                            self.intermediate_h(
+                                torch.cat(
+                                    (
+                                        emb[i].unsqueeze(0),
+                                        query.transpose(0, 1),
+                                        attn.transpose(0, 1),
+                                        hidden[i].unsqueeze(0),
+                                    ),
+                                    -1,
+                                )
+                            )
+                        )
+                    )
+                )
+
             key_cache_i, value_cache_i, hidden_i = self.drop(
                 self.tanh(self.f_norm(self.final_h(intermediate)))
             ).split(self.nhid, dim=-1)

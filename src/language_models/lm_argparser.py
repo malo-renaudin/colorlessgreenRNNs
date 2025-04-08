@@ -59,3 +59,9 @@ lm_parser.add_argument(
 lm_parser.add_argument(
     "--log", type=str, default="log.txt", help="path to logging file"
 )
+lm_parser.add_argument(
+    "--nheads",
+    type=int,
+    default=None,
+    help="number of attention heads in the CBR_RNN model",
+)

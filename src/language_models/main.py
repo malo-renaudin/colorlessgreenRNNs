@@ -75,11 +75,21 @@ criterion = nn.CrossEntropyLoss()
 ###############################################################################
 
 logging.info("Building the model")
+# add an option to load a model here :
+# if args.checkpoint_path :
+#   model = model.args.classmodel(args.model, 50001, 200, 650, 2, 0.2, False)
+#   with open(args.checkpoint_path, 'rb') as f:
+#       state_dict = torch.load(f, map_location='cuda' if device =='cuda' else 'cpu')
+#       model.load_state_dict(state_dict)
+#   model.to(device)
+# else :
 
 if args.classmodel == "CBR_RNN":
-    model = model.CBR_RNN(ntokens, args.emsize, args.nhid, device, args.dropout).to(
+    model = model.CBR_RNN(
+        ntokens, args.emsize, args.nhid, device, args.nheads, args.dropout
+    ).to(
         device
-    )
+    )  # rajouter argument nheads
 else:
     model = model.RNNModel(
         args.model,
@@ -112,7 +122,7 @@ def evaluate(data_source):
             # > output has size seq_length x batch_size x vocab_size
             if args.classmodel == "CBR_RNN":
                 cache = model.init_cache(data)
-                output, hidden = model(data, cache)
+                output, hidden = model(data, cache, args.nheads)
                 output_flat = output.reshape(-1, output.size(-1))
                 targets_flat = targets.reshape(-1)
                 total_loss += (
@@ -165,7 +175,7 @@ def train():
             # also initialization is done by batch with attention mechanism to ensure independence between sentences,
             # temporal dependency is maintained through caching.
             # Differently, lstm maintains an hidden state through all the training
-            output, hidden = model(data, cache)
+            output, hidden = model(data, cache, args.nheads)
             output_flat = output.reshape(-1, output.size(-1))
             targets_flat = targets.reshape(-1)
             loss = criterion(output_flat, targets_flat)
@@ -210,6 +220,20 @@ def train():
         #     save_val_loss_data(val_loss_data, subfolder, filename)
         #     model.train()
 
+        # nouvelle version
+        # if args.batch_check :
+        #   if batch%args.batch_check == 0:
+        #       save_checkpoint(model, args.name, epoch, batch)
+        #       val_loss = evaluate(val_data)
+        #       filename = f"epoch{epoch}_batch{batch}"
+        #       logging.info(
+        #          "| epoch {:3d} | {:5d}/{:5d} batches | val_loss{:5.2f}".format(
+        #              epoch, batch, len(train_data) // args.bptt, val_loss
+        #          )
+        #        )
+        #        val_loss_data.append({"epoch": epoch, "batch": batch, "val_loss": val_loss})
+        #       save_val_loss_data(val_loss_data, subfolder, filename)
+        #       model.train()
         if batch % args.log_interval == 0 and batch > 0:
             cur_loss = total_loss / args.log_interval
             elapsed = time.time() - start_time
@@ -235,6 +259,8 @@ best_val_loss = None
 
 # At any point you can hit Ctrl + C to break out of training early.
 try:
+    # if args.epoch_checkpointed :
+    #   for epoch in range (args.epoch_checkpointed, args.epochs+1)
     for epoch in range(1, args.epochs + 1):
         epoch_start_time = time.time()
 
