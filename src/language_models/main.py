@@ -147,11 +147,11 @@ def train():
     # NEW : move hidden to devide
     # if args.classmodel != "CBR_RNN":
     #     hidden = move_to_device(model.init_hidden(args.batch_size), device)
-    if epoch == 1:
-        save_checkpoint(model, args.name, epoch, 0)
-        logging.info(
-            f"Checkpoint saved before the first batch: epoch {epoch}, batch {0}"
-        )
+    # if epoch == 1:
+    #     save_checkpoint(model, args.name, epoch, 0)
+    #     logging.info(
+    #         f"Checkpoint saved before the first batch: epoch {epoch}, batch {0}"
+    #     )
 
     for batch, i in enumerate(range(0, train_data.size(0) - 1, args.bptt)):
         data, targets = get_batch(train_data, i, args.bptt)
@@ -185,30 +185,30 @@ def train():
         total_loss += loss.item()
         # NEW : added checkpointing
         # checkpointing every batch for the 5 first epochs
-        if epoch <= 1 and batch % 10 == 0 and batch <= 300:
-            save_checkpoint(model, args.name, epoch, batch)
-            val_loss = evaluate(val_data)
-            filename = f"epoch{epoch}_batch{batch}"
-            logging.info(
-                "| epoch {:3d} | {:5d}/{:5d} batches | val_loss{:5.2f}".format(
-                    epoch, batch, len(train_data) // args.bptt, val_loss
-                )
-            )
-            val_loss_data.append({"epoch": epoch, "batch": batch, "val_loss": val_loss})
-            save_val_loss_data(val_loss_data, subfolder, filename)
-            model.train()
-        if epoch <= 2 and batch % 100 == 0:
-            save_checkpoint(model, args.name, epoch, batch)
-            val_loss = evaluate(val_data)
-            filename = f"epoch{epoch}_batch{batch}"
-            logging.info(
-                "| epoch {:3d} | {:5d}/{:5d} batches | val_loss{:5.2f}".format(
-                    epoch, batch, len(train_data) // args.bptt, val_loss
-                )
-            )
-            val_loss_data.append({"epoch": epoch, "batch": batch, "val_loss": val_loss})
-            save_val_loss_data(val_loss_data, subfolder, filename)
-            model.train()
+        # if epoch <= 1 and batch % 10 == 0 and batch <= 300:
+        #     save_checkpoint(model, args.name, epoch, batch)
+        #     val_loss = evaluate(val_data)
+        #     filename = f"epoch{epoch}_batch{batch}"
+        #     logging.info(
+        #         "| epoch {:3d} | {:5d}/{:5d} batches | val_loss{:5.2f}".format(
+        #             epoch, batch, len(train_data) // args.bptt, val_loss
+        #         )
+        #     )
+        #     val_loss_data.append({"epoch": epoch, "batch": batch, "val_loss": val_loss})
+        #     save_val_loss_data(val_loss_data, subfolder, filename)
+        #     model.train()
+        # if epoch <= 2 and batch % 100 == 0:
+        #     save_checkpoint(model, args.name, epoch, batch)
+        #     val_loss = evaluate(val_data)
+        #     filename = f"epoch{epoch}_batch{batch}"
+        #     logging.info(
+        #         "| epoch {:3d} | {:5d}/{:5d} batches | val_loss{:5.2f}".format(
+        #             epoch, batch, len(train_data) // args.bptt, val_loss
+        #         )
+        #     )
+        #     val_loss_data.append({"epoch": epoch, "batch": batch, "val_loss": val_loss})
+        #     save_val_loss_data(val_loss_data, subfolder, filename)
+        #     model.train()
 
         if batch % args.log_interval == 0 and batch > 0:
             cur_loss = total_loss / args.log_interval
@@ -252,16 +252,16 @@ try:
 
         # NEW : added checkpointing
         # checkpointing every epochs after the 5th epoch
-        if epoch > 2:
-            save_checkpoint(model, args.name, epoch)
-            # val_loss = evaluate(val_data)
-            # logging.info('| epoch {:3d} | val_loss{:5.2f}'.format(epoch, val_loss))
-            val_loss_data.append(
-                {"epoch": epoch, "batch": "end_of_epoch", "val_loss": val_loss}
-            )
-            filename = f"epoch{epoch}"
-            save_val_loss_data(val_loss_data, subfolder, filename)
-            model.train()
+        # if epoch > 2:
+        save_checkpoint(model, args.name, epoch)
+        # val_loss = evaluate(val_data)
+        # logging.info('| epoch {:3d} | val_loss{:5.2f}'.format(epoch, val_loss))
+        val_loss_data.append(
+            {"epoch": epoch, "batch": "end_of_epoch", "val_loss": val_loss}
+        )
+        filename = f"epoch{epoch}"
+        save_val_loss_data(val_loss_data, subfolder, filename)
+        model.train()
         # Save the model if the validation loss is the best we've seen so far.
         if not best_val_loss or val_loss < best_val_loss:
             with open(args.save, "wb") as f:
