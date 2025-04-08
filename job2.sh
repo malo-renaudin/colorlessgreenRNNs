@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=lstm_adam # Job name
+#SBATCH --job-name=cbr_dim_256 # Job name
 #SBATCH --partition=gpu 
 #SBATCH --export=ALL 
 #SBATCH --cpus-per-task=6        # Number of CPU cores per task (adjust as needed)
@@ -24,5 +24,9 @@ conda list
 #python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name test_cbr_scaled_adam --classmodel 'CBR_RNN' --batch_size 256 --lr 0.001 --cuda
 #multi head cbr rnn
 #python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name multihead_cbr --classmodel 'CBR_RNN' --batch_size 256 --nheads 2 --lr 0.001 --cuda
+#3 heads cbr rnn
+#python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name 8_heads_cbr --classmodel 'CBR_RNN' --batch_size 256 --nheads 8 --lr 0.001 --cuda
+#cbr rnn growing dimension
+python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name test_cbr_scaled_adam --classmodel 'CBR_RNN' --batch_size 256 --emsize 256 --nhid 256 --lr 0.001 --cuda
 #lstm
-python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name lstm_adam --classmodel 'RNNModel' --model 'LSTM' --emsize 650 --nhid 650 --batch_size 256 --lr 0.001 --cuda
+#python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name lstm_adam --classmodel 'RNNModel' --model 'LSTM' --emsize 650 --nhid 650 --batch_size 256 --lr 0.001 --cuda
