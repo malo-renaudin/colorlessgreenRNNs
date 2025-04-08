@@ -9,7 +9,8 @@
 import torch
 import os
 import logging
-import pandas as pd 
+import pandas as pd
+
 
 def repackage_hidden(h):
     """Detaches hidden states from their history."""
@@ -21,9 +22,9 @@ def repackage_hidden(h):
 
 def get_batch(source, i, seq_length):
     seq_len = min(seq_length, len(source) - 1 - i)
-    data = source[i:i+seq_len]
+    data = source[i : i + seq_len]
     # predict the sequences shifted by one word
-    target = source[i+1:i+1+seq_len].view(-1)
+    target = source[i + 1 : i + 1 + seq_len].view(-1)
     return data, target
 
 
@@ -39,30 +40,66 @@ def batchify(data, bsz, device):
     data = data.to(device)
     return data
 
-def save_checkpoint(model, experiment_name,epoch, batch=None):
+
+def save_checkpoint(model, experiment_name, epoch, batch=None):
     """Save model checkpoint."""
     checkpoint_dir = "checkpoints"
-    
+
     # Create a subfolder for the experiment within the checkpoints directory
     experiment_dir = os.path.join(checkpoint_dir, experiment_name)
     os.makedirs(experiment_dir, exist_ok=True)
-    #if batch is None or batch % 10 == 0:
+    # if batch is None or batch % 10 == 0:
 
     if batch is None:
-        filename = f"{experiment_dir}/epoch_{epoch}.pt"    
+        filename = f"{experiment_dir}/epoch_{epoch}.pt"
     else:
         filename = f"{experiment_dir}/epoch_{epoch}_batch_{batch}.pt"
 
     torch.save(model.state_dict(), filename)
     logging.info(f"Checkpoint saved: {filename}")
 
+
 def move_to_device(hidden, device):
-     """Move each tensor in the hidden state tuple to the specified device."""
-     if isinstance(hidden, torch.Tensor):
-         return hidden.to(device)
-     else:
-         return tuple(move_to_device(h, device) for h in hidden)
-     
+    """Move each tensor in the hidden state tuple to the specified device."""
+    if isinstance(hidden, torch.Tensor):
+        return hidden.to(device)
+    else:
+        return tuple(move_to_device(h, device) for h in hidden)
+
+
 def save_val_loss_data(val_loss_data, folder, filename):
     val_loss_df = pd.DataFrame(val_loss_data)
     val_loss_df.to_csv(os.path.join(folder, filename), index=False)
+
+
+def load_model(
+    classmodel,
+    model,
+    ntokens,
+    emsize,
+    nhid,
+    nheads,
+    dropout,
+    device,
+    nlayers,
+    tied,
+    checkpoint_path,
+):
+    import model
+
+    if classmodel == "RNNModel":
+        model = model.RNNModel(model, ntokens, emsize, nhid, nlayers, dropout, tied)
+
+    elif classmodel == "CBR_RNN":
+        model = model.CBR_RNN(ntokens, emsize, nhid, device, nheads, dropout)
+
+    if checkpoint_path:
+        with open(checkpoint_path, "rb") as f:
+            state_dict = torch.load(
+                f, map_location="cuda" if device == "cuda" else "cpu"
+            )
+            model.load_state_dict(state_dict)
+
+    model = model.to(device)
+
+    return model

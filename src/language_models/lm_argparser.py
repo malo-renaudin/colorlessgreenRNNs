@@ -65,3 +65,23 @@ lm_parser.add_argument(
     default=None,
     help="number of attention heads in the CBR_RNN model",
 )
+
+
+def checkpoint_path_or_false(arg):
+    if arg is None:
+        return False
+    return arg
+
+
+lm_parser.add_argument(
+    "--checkpoint_path",
+    type=checkpoint_path_or_false,
+    default=None,
+    help="path to a checkpoint of the model",
+)
+lm_parser.add_argument(
+    "--batch_check",
+    type=int,
+    default=1000,
+    help="if batch_check=n, checkpoints will be saved each n batches within an epoch",
+)

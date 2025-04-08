@@ -23,6 +23,7 @@ from utils import (
     save_checkpoint,
     move_to_device,
     save_val_loss_data,
+    load_model,
 )
 import torch.profiler
 
@@ -84,23 +85,35 @@ logging.info("Building the model")
 #   model.to(device)
 # else :
 
-if args.classmodel == "CBR_RNN":
-    model = model.CBR_RNN(
-        ntokens, args.emsize, args.nhid, device, args.nheads, args.dropout
-    ).to(
-        device
-    )  # rajouter argument nheads
-else:
-    model = model.RNNModel(
-        args.model,
-        ntokens,
-        args.emsize,
-        args.nhid,
-        args.nlayers,
-        args.dropout,
-        args.tied,
-    ).to(device)
-
+# if args.classmodel == "CBR_RNN":
+#     model = model.CBR_RNN(
+#         ntokens, args.emsize, args.nhid, device, args.nheads, args.dropout
+#     ).to(
+#         device
+#     )  # rajouter argument nheads
+# else:
+#     model = model.RNNModel(
+#         args.model,
+#         ntokens,
+#         args.emsize,
+#         args.nhid,
+#         args.nlayers,
+#         args.dropout,
+#         args.tied,
+#     ).to(device)
+model = load_model(
+    args.classmodel,
+    args.model,
+    ntokens,
+    args.emsize,
+    args.nhid,
+    args.nheads,
+    args.dropout,
+    device,
+    args.nlayers,
+    args.tied,
+    args.checkpoint_path,
+)
 
 ###############################################################################
 # Training code
@@ -112,7 +125,8 @@ def evaluate(data_source):
     model.eval()
     total_loss = 0
     # NEW : move hidden to device
-    hidden = move_to_device(model.init_hidden(eval_batch_size), device)
+    if args.classmodel != "CBR_RNN":
+        hidden = move_to_device(model.init_hidden(eval_batch_size), device)
 
     with torch.no_grad():
         for i in range(0, data_source.size(0) - 1, args.bptt):
@@ -155,8 +169,8 @@ def train():
     total_loss = 0
     start_time = time.time()
     # NEW : move hidden to devide
-    # if args.classmodel != "CBR_RNN":
-    #     hidden = move_to_device(model.init_hidden(args.batch_size), device)
+    if args.classmodel != "CBR_RNN":
+        hidden = move_to_device(model.init_hidden(args.batch_size), device)
     # if epoch == 1:
     #     save_checkpoint(model, args.name, epoch, 0)
     #     logging.info(
@@ -221,19 +235,21 @@ def train():
         #     model.train()
 
         # nouvelle version
-        # if args.batch_check :
-        #   if batch%args.batch_check == 0:
-        #       save_checkpoint(model, args.name, epoch, batch)
-        #       val_loss = evaluate(val_data)
-        #       filename = f"epoch{epoch}_batch{batch}"
-        #       logging.info(
-        #          "| epoch {:3d} | {:5d}/{:5d} batches | val_loss{:5.2f}".format(
-        #              epoch, batch, len(train_data) // args.bptt, val_loss
-        #          )
-        #        )
-        #        val_loss_data.append({"epoch": epoch, "batch": batch, "val_loss": val_loss})
-        #       save_val_loss_data(val_loss_data, subfolder, filename)
-        #       model.train()
+        if args.checkpoint_path:
+            if batch % args.batch_check == 0:
+                save_checkpoint(model, args.name, epoch, batch)
+                val_loss = evaluate(val_data)
+                filename = f"epoch{epoch}_batch{batch}"
+                logging.info(
+                    "| epoch {:3d} | {:5d}/{:5d} batches | val_loss{:5.2f}".format(
+                        epoch, batch, len(train_data) // args.bptt, val_loss
+                    )
+                )
+                val_loss_data.append(
+                    {"epoch": epoch, "batch": batch, "val_loss": val_loss}
+                )
+                save_val_loss_data(val_loss_data, subfolder, filename)
+                model.train()
         if batch % args.log_interval == 0 and batch > 0:
             cur_loss = total_loss / args.log_interval
             elapsed = time.time() - start_time

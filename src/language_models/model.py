@@ -186,6 +186,16 @@ class CBR_RNN(nn.Module):
                         )
                     )
                 )
+                key_cache_i, value_cache_i, hidden_i = self.drop(
+                    self.tanh(self.f_norm(self.final_h(intermediate)))
+                ).split(self.nhid, dim=-1)
+
+                hidden = torch.cat((hidden, hidden_i.unsqueeze(0)), dim=0)
+                key_cache = torch.cat((key_cache, key_cache_i.unsqueeze(0)), dim=0)
+
+                value_cache = torch.cat(
+                    (value_cache, value_cache_i.unsqueeze(0)), dim=0
+                )
             else:
                 attn_output = self.multihead_attn(
                     query, key_cache.transpose(0, 1), value_cache.transpose(0, 1)
@@ -210,14 +220,15 @@ class CBR_RNN(nn.Module):
                     )
                 )
 
-            key_cache_i, value_cache_i, hidden_i = self.drop(
-                self.tanh(self.f_norm(self.final_h(intermediate)))
-            ).split(self.nhid, dim=-1)
-
-            hidden = torch.cat((hidden, hidden_i.unsqueeze(0)), dim=0)
-            key_cache = torch.cat((key_cache, key_cache_i.unsqueeze(0)), dim=0)
-
-            value_cache = torch.cat((value_cache, value_cache_i.unsqueeze(0)), dim=0)
+                intermediate_2 = self.drop(
+                    self.tanh(self.f_norm(self.final_h(intermediate)))
+                )
+                key_cache_i, value_cache_i, hidden_i = intermediate_2.split(
+                    self.nhid, dim=-1
+                )
+                hidden = torch.cat((hidden, hidden_i), dim=0)
+                key_cache = torch.cat((key_cache, key_cache_i), dim=0)
+                value_cache = torch.cat((value_cache, value_cache_i), dim=0)
 
         decoded = self.decoder(hidden[1:])
 
