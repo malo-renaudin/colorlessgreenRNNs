@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=cbr_rnn_scaled_less_check_1024 # Job name
+#SBATCH --job-name=multihead_cbr # Job name
 #SBATCH --partition=gpu 
 #SBATCH --export=ALL 
 #SBATCH --cpus-per-task=6        # Number of CPU cores per task (adjust as needed)
@@ -21,4 +21,7 @@ echo "python-version $(python --version)"
 echo "CUDA_DEVICE: $CUDA_VISIBLE_DEVICES"
 conda list 
  
-python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name test_cbr_scaled --classmodel 'CBR_RNN' --batch_size 1024 --lr 1.0 --cuda
+#python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name test_cbr_scaled --classmodel 'CBR_RNN' --batch_size 1024 --lr 1.0 --cuda
+python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name multihead_cbr --classmodel 'CBR_RNN' --batch_size 1024 --nheads 2 --lr 1.0 --cuda
+#python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name check_ep_3_lstm --classmodel 'RNNModel' --batch_size 512  --lr 1.0 --cuda
+#regarder supplementary materials colorless green rnns
