@@ -99,7 +99,9 @@ class CBR_RNN(nn.Module):
         self.encoder = nn.Embedding(ntoken, ninp)
         self.q = nn.Linear(ninp + nhid, nhid)
         self.intermediate_h = nn.Linear(nhid * 4, nhid * 4)
-        self.decoder = nn.Linear(nhid, ntoken + 1)
+        self.decoder = nn.Linear(
+            nhid, ntoken + 1
+        )  # checker si différence avec ntoken importante
         self.q_norm = torch.nn.LayerNorm(nhid)
         self.int_norm = torch.nn.LayerNorm(nhid * 4)
         self.f_norm = torch.nn.LayerNorm(nhid * 3)
