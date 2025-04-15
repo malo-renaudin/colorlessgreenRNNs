@@ -52,6 +52,12 @@ data_path = "/scratch2/mrenaudin/colorlessgreenRNNs/english_data"
 dictionary = Dictionary(data_path)
 nounpp = "//scratch2/mrenaudin/colorlessgreenRNNs/NounPP/Stimuli/nounpp.txt"
 checkpoint_dir = args.checkpoint_dir
+output_dir = args.output_dir
+output_name = args.output_name
+
+# Ensure the output directory exists
+os.makedirs(output_dir, exist_ok=True)
+output_path = os.path.join(output_dir, output_name)
 
 
 # create eval dataset class
@@ -257,6 +263,8 @@ for checkpoint_file in tqdm.tqdm(checkpoint_files, desc="Evaluating checkpoints"
     accuracies_list.append({"epoch": epoch_number, **acc})
 
 df = pd.DataFrame(accuracies_list)
+print(f"Saving results to: {output_path}")
+df.to_csv(output_path, index=False)
 print(df)
 # to run on cpu : directly copy paste this in terminal
 # python /scratch2/mrenaudin/colorlessgreenRNNs/evaluation_notebooks/evaluate_lstm_on_nounpp.py --emsize 650 --nhid 650 --checkpoint_dir '/scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/lstm_adam' --output_name 'lstm_adam'
