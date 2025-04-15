@@ -100,7 +100,7 @@ class CBR_RNN(nn.Module):
         self.q = nn.Linear(ninp + nhid, nhid)
         self.intermediate_h = nn.Linear(nhid * 4, nhid * 4)
         self.decoder = nn.Linear(
-            nhid, ntoken + 1
+            nhid, ntoken
         )  # checker si différence avec ntoken importante
         self.q_norm = torch.nn.LayerNorm(nhid)
         self.int_norm = torch.nn.LayerNorm(nhid * 4)
@@ -163,7 +163,7 @@ class CBR_RNN(nn.Module):
             seq_len
         ):  # need to keep sequential processing as the core structure is recurrent (each new word needs the hidden state obtained after prediction of the last word)
             # 2. Concatenate with previous hidden state
-
+            # multiply hidden[i] by a mask (lower triangular matrix of 1s)
             query = self.drop(
                 self.tanh(self.q_norm(self.q(torch.cat((emb[i], hidden[i]), -1))))
             )  # b * d
