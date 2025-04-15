@@ -41,7 +41,7 @@ def batchify(data, bsz, device):
     return data
 
 
-def save_checkpoint(model, experiment_name, epoch, batch=None):
+def save_checkpoint(model, optimizer, experiment_name, epoch, batch=None):
     """Save model checkpoint."""
     checkpoint_dir = "checkpoints"
 
@@ -54,8 +54,12 @@ def save_checkpoint(model, experiment_name, epoch, batch=None):
         filename = f"{experiment_dir}/epoch_{epoch}.pt"
     else:
         filename = f"{experiment_dir}/epoch_{epoch}_batch_{batch}.pt"
-
-    torch.save(model.state_dict(), filename)
+    checkpoint = {
+        "epoch": epoch,
+        "model_state_dict": model.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),
+    }
+    torch.save(checkpoint, filename)
     logging.info(f"Checkpoint saved: {filename}")
 
 
