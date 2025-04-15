@@ -31,7 +31,6 @@ parser.add_argument(
     type=str,
     help="directory containing checkpoints for training the model",
 )
-parser.add_argument("--results", type=str, help="where to store results df")
 parser.add_argument(
     "--output_dir",
     type=str,

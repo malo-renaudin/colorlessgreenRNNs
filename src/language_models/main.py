@@ -146,15 +146,16 @@ def train():
     model.train()
     total_loss = 0
     start_time = time.time()
+    optimizer = optim.Adam(model.parameters(), lr=args.lr)
     # NEW : move hidden to devide
     if args.classmodel != "CBR_RNN":
         hidden = move_to_device(model.init_hidden(args.batch_size), device)
     if epoch == 1:
-        save_checkpoint(model, args.name, epoch, 0)
+        save_checkpoint(model, optimizer, args.name, epoch, 0)
         logging.info(
             f"Checkpoint saved before the first batch: epoch {epoch}, batch {0}"
         )
-    optimizer = optim.Adam(model.parameters(), lr=args.lr)
+
     for batch, i in enumerate(range(0, train_data.size(0) - 1, args.bptt)):
         data, targets = get_batch(train_data, i, args.bptt)
         # NEW : move data and target to device
@@ -182,7 +183,7 @@ def train():
         # nouvelle version
         if args.checkpoint_path:
             if batch % args.batch_check == 0:
-                save_checkpoint(model, args.name, epoch, batch)
+                save_checkpoint(model, optimizer, args.name, epoch, batch)
                 val_loss = evaluate(val_data)
                 filename = f"epoch{epoch}_batch{batch}"
                 logging.info(
@@ -242,7 +243,7 @@ try:
         # NEW : added checkpointing
         # checkpointing every epochs after the 5th epoch
         # if epoch > 2:
-        save_checkpoint(model, args.name, epoch)
+        save_checkpoint(model, optimizer, args.name, epoch)
         # val_loss = evaluate(val_data)
         # logging.info('| epoch {:3d} | val_loss{:5.2f}'.format(epoch, val_loss))
         val_loss_data.append(
