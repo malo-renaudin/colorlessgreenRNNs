@@ -41,6 +41,7 @@ def batchify(data, bsz, device):
     return data
 
 
+# inclure batch index en argument ici comme ça on désengorge script principal
 def save_checkpoint(model, optimizer, experiment_name, epoch, batch=None):
     """Save model checkpoint."""
     checkpoint_dir = "checkpoints"
