@@ -214,6 +214,8 @@ def train():
             total_loss = 0
             start_time = time.time()
 
+    return output, loss, optimizer
+
 
 # Loop over epochs.
 lr = args.lr
@@ -228,7 +230,7 @@ try:
     for epoch in range(k, args.epochs + 1):
         epoch_start_time = time.time()
 
-        train()
+        _, _, optimizer = train()
 
         val_loss = evaluate(val_data)
         logging.info("-" * 89)
