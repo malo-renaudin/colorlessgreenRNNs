@@ -27,6 +27,7 @@ from utils import (
 )
 import torch.profiler
 import torch.optim as optim
+import numpy as np
 
 
 parser = argparse.ArgumentParser(
@@ -142,26 +143,24 @@ val_loss_data = []
 
 optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
-
 def train():
     # Turn on training mode which enables dropout.
     model.train()
     total_loss = 0
     start_time = time.time()
-    # NEW : move hidden to devide
+    
+    # Move hidden state to device
     if args.classmodel != "CBR_RNN":
         hidden = move_to_device(model.init_hidden(args.batch_size), device)
+    
     if epoch == 1:
         save_checkpoint(model, optimizer, args.name, epoch, 0)
-        logging.info(
-            f"Checkpoint saved before the first batch: epoch {epoch}, batch {0}"
-        )
+        logging.info(f"Checkpoint saved before the first batch: epoch {epoch}, batch {0}")
 
     for batch, i in enumerate(range(0, train_data.size(0) - 1, args.bptt)):
         data, targets = get_batch(train_data, i, args.bptt)
         # NEW : move data and target to device
         data, targets = data.to(device), targets.to(device)
-        # model.zero_grad()
         optimizer.zero_grad()
 
         if args.classmodel == "CBR_RNN":
@@ -171,34 +170,39 @@ def train():
             targets_flat = targets.reshape(-1)
             loss = criterion(output_flat, targets_flat)
         else:
-            hidden = repackage_hidden(
-                hidden
-            )  # initialization is just about hidden state
+            hidden = repackage_hidden(hidden)
             output, hidden = model(data, hidden)
             loss = criterion(output.view(-1, ntokens), targets)
 
+        # Check for NaN loss
+        if torch.isnan(loss):
+            raise ValueError("NaN loss encountered")
+            
         loss.backward()
+        
+        # Apply gradient clipping consistently
         torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
         optimizer.step()
 
         total_loss += loss.item()
 
-        # nouvelle version
-        if args.checkpoint_path:
-            if batch % args.batch_check == 0:
-                save_checkpoint(model, optimizer, args.name, epoch, batch)
-                val_loss = evaluate(val_data)
-                filename = f"epoch{epoch}_batch{batch}"
-                logging.info(
-                    "| epoch {:3d} | {:5d}/{:5d} batches | val_loss{:5.2f}".format(
-                        epoch, batch, len(train_data) // args.bptt, val_loss
-                    )
+        # Checkpoint and validation
+        if args.checkpoint_path and batch % args.batch_check == 0:
+            save_checkpoint(model, optimizer, args.name, epoch, batch)
+            val_loss = evaluate(val_data)
+            filename = f"epoch{epoch}_batch{batch}"
+            logging.info(
+                "| epoch {:3d} | {:5d}/{:5d} batches | val_loss{:5.2f}".format(
+                    epoch, batch, len(train_data) // args.bptt, val_loss
                 )
-                val_loss_data.append(
-                    {"epoch": epoch, "batch": batch, "val_loss": val_loss}
-                )
-                save_val_loss_data(val_loss_data, subfolder, filename)
-                model.train()
+            )
+            val_loss_data.append(
+                {"epoch": epoch, "batch": batch, "val_loss": val_loss}
+            )
+            save_val_loss_data(val_loss_data, subfolder, filename)
+            model.train()  # Set back to training mode after evaluation
+
+        # Logging
         if batch % args.log_interval == 0 and batch > 0:
             cur_loss = total_loss / args.log_interval
             elapsed = time.time() - start_time
@@ -208,7 +212,7 @@ def train():
                     epoch,
                     batch,
                     len(train_data) // args.bptt,
-                    lr,
+                    args.lr,  # Use initial learning rate
                     elapsed * 1000 / args.log_interval,
                     cur_loss,
                     math.exp(cur_loss),
@@ -219,18 +223,14 @@ def train():
 
 
 # Loop over epochs.
-lr = args.lr
-best_val_loss = None
-
-# At any point you can hit Ctrl + C to break out of training early.
 try:
     if args.epoch_checkpointed:
         k = args.epoch_checkpointed
     else:
         k = 1
+        
     for epoch in range(k, args.epochs + 1):
         epoch_start_time = time.time()
-
         train()
 
         val_loss = evaluate(val_data)
@@ -243,14 +243,14 @@ try:
         )
         logging.info("-" * 89)
 
+        # Save checkpoint at end of epoch
         save_checkpoint(model, optimizer, args.name, epoch)
-
         val_loss_data.append(
             {"epoch": epoch, "batch": "end_of_epoch", "val_loss": val_loss}
         )
         filename = f"epoch{epoch}"
         save_val_loss_data(val_loss_data, subfolder, filename)
-        model.train()
+        model.train()  # Set back to training mode after evaluation
 
 except KeyboardInterrupt:
     logging.info("-" * 89)
@@ -263,7 +263,7 @@ except KeyboardInterrupt:
 with open(args.save, "rb") as f:
     model = torch.load(f)
 
-# Run on test data.
+# Run on test data
 test_loss = evaluate(test_data)
 logging.info("=" * 89)
 logging.info(
