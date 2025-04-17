@@ -96,7 +96,7 @@ def load_model(
         model = m.RNNModel(model, ntokens, emsize, nhid, nlayers, dropout, tied)
 
     elif classmodel == "CBR_RNN":
-        model = m.CBR_RNN(ntokens, emsize, nhid, device, nheads, dropout)
+        model = m.CBR_RNN(ntokens, emsize, nhid, nheads, dropout, device)
 
     if checkpoint_path:
         with open(checkpoint_path, "rb") as f:

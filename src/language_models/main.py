@@ -113,7 +113,7 @@ def evaluate(data_source):
             data, targets = data.to(device), targets.to(device)
             # > output has size seq_length x batch_size x vocab_size
             if args.classmodel == "CBR_RNN":
-                cache = model.init_cache(data)
+                cache = model.init_cache(data, args.nheads)
                 output, hidden = model(data, cache, args.nheads)
                 output_flat = output.reshape(-1, output.size(-1))
                 targets_flat = targets.reshape(-1)
@@ -140,13 +140,14 @@ subfolder = os.path.join(main_folder, args.name)
 os.makedirs(subfolder, exist_ok=True)
 val_loss_data = []
 
+optimizer = optim.Adam(model.parameters(), lr=args.lr)
+
 
 def train():
     # Turn on training mode which enables dropout.
     model.train()
     total_loss = 0
     start_time = time.time()
-    optimizer = optim.Adam(model.parameters(), lr=args.lr)
     # NEW : move hidden to devide
     if args.classmodel != "CBR_RNN":
         hidden = move_to_device(model.init_hidden(args.batch_size), device)
@@ -162,8 +163,9 @@ def train():
         data, targets = data.to(device), targets.to(device)
         # model.zero_grad()
         optimizer.zero_grad()
+
         if args.classmodel == "CBR_RNN":
-            cache = model.init_cache(data)
+            cache = model.init_cache(data, args.nheads)
             output, hidden = model(data, cache, args.nheads)
             output_flat = output.reshape(-1, output.size(-1))
             targets_flat = targets.reshape(-1)
@@ -174,6 +176,7 @@ def train():
             )  # initialization is just about hidden state
             output, hidden = model(data, hidden)
             loss = criterion(output.view(-1, ntokens), targets)
+
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
         optimizer.step()
@@ -214,8 +217,6 @@ def train():
             total_loss = 0
             start_time = time.time()
 
-    return output, loss, optimizer
-
 
 # Loop over epochs.
 lr = args.lr
@@ -230,7 +231,7 @@ try:
     for epoch in range(k, args.epochs + 1):
         epoch_start_time = time.time()
 
-        _, _, optimizer = train()
+        train()
 
         val_loss = evaluate(val_data)
         logging.info("-" * 89)
@@ -242,26 +243,15 @@ try:
         )
         logging.info("-" * 89)
 
-        # NEW : added checkpointing
-        # checkpointing every epochs after the 5th epoch
-        # if epoch > 2:
         save_checkpoint(model, optimizer, args.name, epoch)
-        # val_loss = evaluate(val_data)
-        # logging.info('| epoch {:3d} | val_loss{:5.2f}'.format(epoch, val_loss))
+
         val_loss_data.append(
             {"epoch": epoch, "batch": "end_of_epoch", "val_loss": val_loss}
         )
         filename = f"epoch{epoch}"
         save_val_loss_data(val_loss_data, subfolder, filename)
         model.train()
-        # # Save the model if the validation loss is the best we've seen so far.
-        # if not best_val_loss or val_loss < best_val_loss:
-        #     with open(args.save, "wb") as f:
-        #         torch.save(model, f)
-        #     best_val_loss = val_loss
-        # else:
-        #     # Anneal the learning rate if no improvement has been seen in the validation dataset.
-        #     lr /= 4.0
+
 except KeyboardInterrupt:
     logging.info("-" * 89)
     logging.info("Exiting from training early")
