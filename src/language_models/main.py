@@ -13,6 +13,8 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import os
+import gc
+import psutil
 from dictionary_corpus import Corpus
 import model
 from lm_argparser import lm_parser
@@ -25,9 +27,9 @@ from utils import (
     save_val_loss_data,
     load_model,
 )
-import torch.profiler
 import torch.optim as optim
 import numpy as np
+from torch.cuda.amp import autocast, GradScaler
 
 
 parser = argparse.ArgumentParser(
@@ -98,21 +100,45 @@ model = load_model(
 # Training code
 ###############################################################################
 
+def get_memory_usage():
+    """Get current memory usage in MB"""
+    process = psutil.Process(os.getpid())
+    if torch.cuda.is_available():
+        gpu_mem = torch.cuda.memory_allocated() / 1024**2
+        gpu_cache = torch.cuda.memory_reserved() / 1024**2
+        return {
+            'cpu_mem': process.memory_info().rss / 1024**2,
+            'gpu_mem': gpu_mem,
+            'gpu_cache': gpu_cache
+        }
+    return {'cpu_mem': process.memory_info().rss / 1024**2}
+
+def log_memory_usage(prefix=""):
+    """Log current memory usage"""
+    mem = get_memory_usage()
+    if torch.cuda.is_available():
+        logging.info(f"{prefix}Memory Usage - CPU: {mem['cpu_mem']:.2f}MB, GPU: {mem['gpu_mem']:.2f}MB, GPU Cache: {mem['gpu_cache']:.2f}MB")
+    else:
+        logging.info(f"{prefix}Memory Usage - CPU: {mem['cpu_mem']:.2f}MB")
+
+def clear_memory():
+    """Clear both Python and CUDA memory"""
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
 def evaluate(data_source):
     # Turn on evaluation mode which disables dropout.
     model.eval()
     total_loss = 0
-    # NEW : move hidden to device
     if args.classmodel != "CBR_RNN":
         hidden = move_to_device(model.init_hidden(eval_batch_size), device)
 
     with torch.no_grad():
         for i in range(0, data_source.size(0) - 1, args.bptt):
             data, targets = get_batch(data_source, i, args.bptt)
-            # NEW : move data and targets to device
             data, targets = data.to(device), targets.to(device)
-            # > output has size seq_length x batch_size x vocab_size
+            
             if args.classmodel == "CBR_RNN":
                 cache = model.init_cache(data, args.nheads)
                 output, hidden = model(data, cache, args.nheads)
@@ -121,16 +147,16 @@ def evaluate(data_source):
                 total_loss += (
                     len(data) * nn.CrossEntropyLoss()(output_flat, targets_flat).item()
                 )
+                del output, output_flat, targets_flat, cache
             else:
                 output, hidden = model(data, hidden)
-                # > output_flat has size num_targets x vocab_size (batches are stacked together)
-                # > ! important, otherwise softmax computation (e.g. with F.softmax()) is incorrect
                 output_flat = output.view(-1, ntokens)
-                # output_candidates_info(output_flat.data, targets.data)
                 total_loss += (
                     len(data) * nn.CrossEntropyLoss()(output_flat, targets).item()
                 )
+                del output, output_flat
                 hidden = repackage_hidden(hidden)
+            clear_memory()
 
     return total_loss / (len(data_source) - 1)
 
@@ -144,13 +170,26 @@ val_loss_data = []
 optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
 def train():
+    # Enable anomaly detection
+    torch.autograd.set_detect_anomaly(True)
+    
     # Turn on training mode which enables dropout.
     model.train()
     total_loss = 0
     start_time = time.time()
     
-    # Move hidden state to device
-    if args.classmodel != "CBR_RNN":
+    # Log initial memory usage
+    log_memory_usage("Initial ")
+    
+    # Initialize cache once per epoch for CBR_RNN
+    if args.classmodel == "CBR_RNN":
+        # Get first batch to determine dimensions
+        first_batch, _ = get_batch(train_data, 0, args.bptt)
+        first_batch = first_batch.to(device)
+        cache = model.init_cache(first_batch, args.nheads)
+        del first_batch  # Clean up the temporary batch
+        clear_memory()
+    else:
         hidden = move_to_device(model.init_hidden(args.batch_size), device)
     
     if epoch == 1:
@@ -159,32 +198,57 @@ def train():
 
     for batch, i in enumerate(range(0, train_data.size(0) - 1, args.bptt)):
         data, targets = get_batch(train_data, i, args.bptt)
-        # NEW : move data and target to device
         data, targets = data.to(device), targets.to(device)
         optimizer.zero_grad()
 
         if args.classmodel == "CBR_RNN":
-            cache = model.init_cache(data, args.nheads)
             output, hidden = model(data, cache, args.nheads)
             output_flat = output.reshape(-1, output.size(-1))
             targets_flat = targets.reshape(-1)
             loss = criterion(output_flat, targets_flat)
+            
+            # Memory tracking
+            if batch % args.log_interval == 0:
+                log_memory_usage(f"Batch {batch} ")
+            
+            del output, output_flat, targets_flat
+            clear_memory()
         else:
             hidden = repackage_hidden(hidden)
             output, hidden = model(data, hidden)
             loss = criterion(output.view(-1, ntokens), targets)
+            del output
+            clear_memory()
 
-        # Check for NaN loss
         if torch.isnan(loss):
             raise ValueError("NaN loss encountered")
             
-        loss.backward()
-        
-        # Apply gradient clipping consistently
-        torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
-        optimizer.step()
+        try:
+            # Call backward
+            loss.backward()
+            
+
+            
+            # Clip gradients
+            torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
+            
+
+            
+            # Step the optimizer
+            optimizer.step()
+            
+        except RuntimeError as e:
+            logging.error(f"Error during backward pass: {str(e)}")
+            logging.error(f"Loss value: {loss.item()}")
+            logging.error(f"Gradients before backward:")
+            for name, param in model.named_parameters():
+                if param.grad is not None:
+                    logging.error(f"{name} - grad shape: {param.grad.shape}")
+            raise e
 
         total_loss += loss.item()
+        del loss
+        clear_memory()
 
         # Checkpoint and validation
         if args.checkpoint_path and batch % args.batch_check == 0:
@@ -201,6 +265,7 @@ def train():
             )
             save_val_loss_data(val_loss_data, subfolder, filename)
             model.train()  # Set back to training mode after evaluation
+            clear_memory()
 
         # Logging
         if batch % args.log_interval == 0 and batch > 0:

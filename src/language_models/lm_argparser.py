@@ -39,7 +39,7 @@ lm_parser.add_argument(
 )
 
 lm_parser.add_argument("--lr", type=float, default=20, help="initial learning rate")
-lm_parser.add_argument("--clip", type=float, default=0.25, help="gradient clipping")
+lm_parser.add_argument("--clip", type=float, default=1, help="gradient clipping")
 lm_parser.add_argument("--epochs", type=int, default=40, help="upper epoch limit")
 lm_parser.add_argument(
     "--batch_size", type=int, default=256, metavar="N", help="batch size"

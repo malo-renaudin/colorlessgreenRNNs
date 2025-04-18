@@ -9,6 +9,7 @@ import torch.nn as nn
 import torch.utils.data.dataloader
 from torch.nn.functional import scaled_dot_product_attention
 import numpy as np
+import logging
 
 
 class RNNModel(nn.Module):
@@ -149,33 +150,59 @@ class CBR_RNN(nn.Module):
         seq_len = observation.size(0)
         hidden, key_cache, value_cache = initial_cache
 
+        # Check if sequence length exceeds maximum
+        if seq_len > 35:  # bptt value from args
+            logging.warning(f"Sequence length {seq_len} exceeds maximum of 35")
+            observation = observation[:35]
+            seq_len = 35
+
         # 1. Encode observations
         emb = self.drop(self.encoder(observation))
+        del observation  # No longer needed after encoding
+        
         for i in range(seq_len):
             # 2. Concatenate with previous hidden state
             combined = torch.cat((emb[i], hidden[-1]), -1)
             query = self.drop(self.tanh(self.q_norm(self.q(combined))))
+            del combined  # No longer needed after creating query
             query = query.unsqueeze(1)
             if nheads == 1:
                 query = query.unsqueeze(1)
-                attn_output = scaled_dot_product_attention(
-                    query, key_cache, value_cache, is_causal=False
-                )
+                
+                # Ensure all tensors are on the same device
+                if query.device != key_cache.device:
+                    key_cache = key_cache.to(query.device)
+                if query.device != value_cache.device:
+                    value_cache = value_cache.to(query.device)
+                    
+                try:
+                    attn_output = scaled_dot_product_attention(
+                        query, key_cache, value_cache, is_causal=False
+                    )
+                except Exception as e:
+                    logging.error(f"Error in attention computation: {str(e)}")
+                    raise
                 attn = attn_output.squeeze(1).squeeze(1)
+                del attn_output  # No longer needed after squeezing
                 query = query.squeeze(1).squeeze(1)
             else:
                 attn_output, _ = self.multihead_attn(
                     query, key_cache, value_cache, is_causal=False
                 )
                 attn = attn_output.squeeze(1)
+                del attn_output  # No longer needed after squeezing
                 query = query.squeeze(1)
 
             intermediate_input = torch.cat((emb[i], query, attn, hidden[-1]), -1)
+            del query, attn  # No longer needed after creating intermediate_input
             intermediate = self.drop(
                 self.tanh(self.int_norm(self.intermediate_h(intermediate_input)))
             )
+            del intermediate_input  # No longer needed after creating intermediate
             final_output = self.drop(self.tanh(self.f_norm(self.final_h(intermediate))))
+            del intermediate  # No longer needed after creating final_output
             key_cache_i, value_cache_i, hidden_i = final_output.split(self.nhid, dim=-1)
+            del final_output  # No longer needed after splitting
 
             hidden_i = hidden_i.unsqueeze(0)
             hidden = torch.cat((hidden, hidden_i), dim=0)
@@ -189,7 +216,10 @@ class CBR_RNN(nn.Module):
                 value_cache_i = value_cache_i.unsqueeze(1)
                 key_cache = torch.cat((key_cache, key_cache_i), dim=1)
                 value_cache = torch.cat((value_cache, value_cache_i), dim=1)
+            del key_cache_i, value_cache_i, hidden_i  # No longer needed after concatenation
 
         decoded = self.decoder(hidden[1:])
+
+        
 
         return decoded, hidden
