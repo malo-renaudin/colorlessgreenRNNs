@@ -98,13 +98,14 @@ def load_model(
     elif classmodel == "CBR_RNN":
         model = m.CBR_RNN(ntokens, emsize, nhid, nheads, dropout, device)
 
+    optimizer_state_dict = None
     if checkpoint_path:
         with open(checkpoint_path, "rb") as f:
             state_dict = torch.load(
                 f, map_location="cuda" if device == "cuda" else "cpu"
             )
-            model.load_state_dict(state_dict)
+            model.load_state_dict(state_dict["model_state_dict"])
+            optimizer_state_dict = state_dict["optimizer_state_dict"]
 
     model = model.to(device)
-
-    return model
+    return model, optimizer_state_dict

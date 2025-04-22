@@ -6,7 +6,7 @@ from pathlib import Path
 checkpoint_dir_str = "/scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/lstm_adam"
 checkpoint_files = sorted(os.listdir(checkpoint_dir_str))  # Ensure chronological order
 checkpoint_dir = Path(checkpoint_dir_str)
-weights_dir = checkpoint_dir / "weights"  # Define the weights directory
+weights_dir = checkpoint_dir / "weights" / "adam_training" # Define the weights directory
 
 # Create the weights directory if it doesn't exist
 weights_dir.mkdir(parents=True, exist_ok=True)
@@ -50,7 +50,7 @@ for item_name in checkpoint_files:
             checkpoint = torch.load(item_path, map_location="cpu")
 
             # Extract model weights from the checkpoint
-            model_weights = checkpoint
+            model_weights = checkpoint["model_state_dict"]
 
             # Extract and store embedding weights
             embedding_weights.append(model_weights["encoder.weight"])

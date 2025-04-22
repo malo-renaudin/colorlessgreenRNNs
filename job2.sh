@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=cbr_2h_256 # Job name
+#SBATCH --job-name=cbr_1h_512# Job name
 #SBATCH --partition=gpu 
 #SBATCH --export=ALL 
 #SBATCH --cpus-per-task=6        # Number of CPU cores per task (adjust as needed)
@@ -22,9 +22,9 @@ echo "python-version $(python --version)"
 echo "CUDA_DEVICE: $CUDA_VISIBLE_DEVICES"
 
 #single head cbr rnn
-#CUDA_LAUNCH_BLOCKING=1 python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name cbr_1h_512 --classmodel 'CBR_RNN' --batch_size 256 --emsize 512 --nhid 512 --lr 0.001 --cuda
+CUDA_LAUNCH_BLOCKING=1 python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name cbr_1h_512 --classmodel 'CBR_RNN' --batch_size 256 --emsize 512 --nhid 512 --lr 0.001 --cuda --checkpoint_path /scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/cbr_1h_512/epoch_15.pt --epoch_checkpointed 15
 #multi head cbr rnn
-CUDA_LAUNCH_BLOCKING=1 python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name cbr_2h_256 --classmodel 'CBR_RNN' --batch_size 256 --nheads 2 --emsize 256 --nhid 256 --lr 0.001 --cuda
+#CUDA_LAUNCH_BLOCKING=1 python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name cbr_2h_256 --classmodel 'CBR_RNN' --batch_size 256 --nheads 2 --emsize 256 --nhid 256 --lr 0.001 --cuda
 #3 heads cbr rnn
 #python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name 8_heads_cbr --classmodel 'CBR_RNN' --batch_size 256 --nheads 8 --lr 0.001 --cuda
 #cbr rnn growing dimension

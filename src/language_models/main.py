@@ -30,6 +30,8 @@ from utils import (
 import torch.optim as optim
 import numpy as np
 from torch.cuda.amp import autocast, GradScaler
+from torch.utils.data import Dataset, DataLoader
+import multiprocessing as mp
 
 
 parser = argparse.ArgumentParser(
@@ -66,13 +68,12 @@ logging.info("( %.2f )" % (time.time() - start))
 ntokens = len(corpus.dictionary)
 logging.info("Vocab size %d", ntokens)
 
+# Batchify the data
 logging.info("Batchying..")
 eval_batch_size = 10
-# NEW : changed args.cuda to device
 train_data = batchify(corpus.train, args.batch_size, device)
 val_data = batchify(corpus.valid, eval_batch_size, device)
 test_data = batchify(corpus.test, eval_batch_size, device)
-
 
 criterion = nn.CrossEntropyLoss()
 
@@ -82,7 +83,7 @@ criterion = nn.CrossEntropyLoss()
 
 logging.info("Building the model")
 print(args.model)
-model = load_model(
+model, optimizer_state_dict = load_model(
     args.classmodel,
     args.model,
     ntokens,
@@ -95,6 +96,13 @@ model = load_model(
     args.tied,
     args.checkpoint_path,
 )
+
+optimizer = optim.Adam(model.parameters(), lr=args.lr)
+if optimizer_state_dict is not None:
+    optimizer.load_state_dict(optimizer_state_dict)
+    logging.info("Loaded optimizer state from checkpoint")
+
+scaler = GradScaler()  # Initialize the gradient scaler
 
 ###############################################################################
 # Training code
@@ -139,23 +147,24 @@ def evaluate(data_source):
             data, targets = get_batch(data_source, i, args.bptt)
             data, targets = data.to(device), targets.to(device)
             
-            if args.classmodel == "CBR_RNN":
-                cache = model.init_cache(data, args.nheads)
-                output, hidden = model(data, cache, args.nheads)
-                output_flat = output.reshape(-1, output.size(-1))
-                targets_flat = targets.reshape(-1)
-                total_loss += (
-                    len(data) * nn.CrossEntropyLoss()(output_flat, targets_flat).item()
-                )
-                del output, output_flat, targets_flat, cache
-            else:
-                output, hidden = model(data, hidden)
-                output_flat = output.view(-1, ntokens)
-                total_loss += (
-                    len(data) * nn.CrossEntropyLoss()(output_flat, targets).item()
-                )
-                del output, output_flat
-                hidden = repackage_hidden(hidden)
+            with autocast():
+                if args.classmodel == "CBR_RNN":
+                    cache = model.init_cache(data, args.nheads)
+                    output, hidden = model(data, cache, args.nheads)
+                    output_flat = output.reshape(-1, output.size(-1))
+                    targets_flat = targets.reshape(-1)
+                    total_loss += (
+                        len(data) * nn.CrossEntropyLoss()(output_flat, targets_flat).item()
+                    )
+                    del output, output_flat, targets_flat, cache
+                else:
+                    output, hidden = model(data, hidden)
+                    output_flat = output.view(-1, ntokens)
+                    total_loss += (
+                        len(data) * nn.CrossEntropyLoss()(output_flat, targets).item()
+                    )
+                    del output, output_flat
+                    hidden = repackage_hidden(hidden)
             clear_memory()
 
     return total_loss / (len(data_source) - 1)
@@ -167,8 +176,6 @@ subfolder = os.path.join(main_folder, args.name)
 os.makedirs(subfolder, exist_ok=True)
 val_loss_data = []
 
-optimizer = optim.Adam(model.parameters(), lr=args.lr)
-
 def train():
     # Enable anomaly detection
     torch.autograd.set_detect_anomaly(True)
@@ -179,7 +186,7 @@ def train():
     start_time = time.time()
     
     # Log initial memory usage
-    log_memory_usage("Initial ")
+    #log_memory_usage("Initial ")
     
     # Initialize cache once per epoch for CBR_RNN
     if args.classmodel == "CBR_RNN":
@@ -194,48 +201,48 @@ def train():
     
     if epoch == 1:
         save_checkpoint(model, optimizer, args.name, epoch, 0)
-        logging.info(f"Checkpoint saved before the first batch: epoch {epoch}, batch {0}")
+        logging.info(f"Checkpoint saved before the first batch: {epoch}, batch {0}")
 
     for batch, i in enumerate(range(0, train_data.size(0) - 1, args.bptt)):
         data, targets = get_batch(train_data, i, args.bptt)
         data, targets = data.to(device), targets.to(device)
         optimizer.zero_grad()
 
-        if args.classmodel == "CBR_RNN":
-            output, hidden = model(data, cache, args.nheads)
-            output_flat = output.reshape(-1, output.size(-1))
-            targets_flat = targets.reshape(-1)
-            loss = criterion(output_flat, targets_flat)
-            
-            # Memory tracking
-            if batch % args.log_interval == 0:
-                log_memory_usage(f"Batch {batch} ")
-            
-            del output, output_flat, targets_flat
-            clear_memory()
-        else:
-            hidden = repackage_hidden(hidden)
-            output, hidden = model(data, hidden)
-            loss = criterion(output.view(-1, ntokens), targets)
-            del output
-            clear_memory()
+        # Use mixed precision training
+        with autocast():
+            if args.classmodel == "CBR_RNN":
+                output, hidden = model(data, cache, args.nheads)
+                output_flat = output.reshape(-1, output.size(-1))
+                targets_flat = targets.reshape(-1)
+                loss = criterion(output_flat, targets_flat)
+                
+                # Memory tracking
+                # if batch % args.log_interval == 0:
+                #     log_memory_usage(f"Batch {batch} ")
+                
+                del output, output_flat, targets_flat
+                clear_memory()
+            else:
+                hidden = repackage_hidden(hidden)
+                output, hidden = model(data, hidden)
+                loss = criterion(output.view(-1, ntokens), targets)
+                del output
+                clear_memory()
 
         if torch.isnan(loss):
             raise ValueError("NaN loss encountered")
             
         try:
-            # Call backward
-            loss.backward()
+            # Scale loss and call backward
+            scaler.scale(loss).backward()
             
-
-            
-            # Clip gradients
+            # Unscale gradients and clip
+            scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
             
-
-            
             # Step the optimizer
-            optimizer.step()
+            scaler.step(optimizer)
+            scaler.update()
             
         except RuntimeError as e:
             logging.error(f"Error during backward pass: {str(e)}")
@@ -251,21 +258,21 @@ def train():
         clear_memory()
 
         # Checkpoint and validation
-        if args.checkpoint_path and batch % args.batch_check == 0:
-            save_checkpoint(model, optimizer, args.name, epoch, batch)
-            val_loss = evaluate(val_data)
-            filename = f"epoch{epoch}_batch{batch}"
-            logging.info(
-                "| epoch {:3d} | {:5d}/{:5d} batches | val_loss{:5.2f}".format(
-                    epoch, batch, len(train_data) // args.bptt, val_loss
-                )
-            )
-            val_loss_data.append(
-                {"epoch": epoch, "batch": batch, "val_loss": val_loss}
-            )
-            save_val_loss_data(val_loss_data, subfolder, filename)
-            model.train()  # Set back to training mode after evaluation
-            clear_memory()
+        # if args.checkpoint_path and batch % args.batch_check == 0:
+        #     save_checkpoint(model, optimizer, args.name, epoch, batch)
+        #     val_loss = evaluate(val_data)
+        #     filename = f"epoch{epoch}_batch{batch}"
+        #     logging.info(
+        #         "| epoch {:3d} | {:5d}/{:5d} batches | val_loss{:5.2f}".format(
+        #             epoch, batch, len(train_data) // args.bptt, val_loss
+        #         )
+        #     )
+        #     val_loss_data.append(
+        #         {"epoch": epoch, "batch": batch, "val_loss": val_loss}
+        #     )
+        #     save_val_loss_data(val_loss_data, subfolder, filename)
+        #     model.train()  # Set back to training mode after evaluation
+        #     clear_memory()
 
         # Logging
         if batch % args.log_interval == 0 and batch > 0:
@@ -290,7 +297,7 @@ def train():
 # Loop over epochs.
 try:
     if args.epoch_checkpointed:
-        k = args.epoch_checkpointed
+        k = int(args.epoch_checkpointed)
     else:
         k = 1
         
@@ -337,3 +344,4 @@ logging.info(
     )
 )
 logging.info("=" * 89)
+
