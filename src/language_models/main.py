@@ -29,9 +29,9 @@ from utils import (
 )
 import torch.optim as optim
 import numpy as np
-from torch.cuda.amp import autocast, GradScaler
 from torch.utils.data import Dataset, DataLoader
 import multiprocessing as mp
+from torch.profiler import profile, record_function, ProfilerActivity
 
 
 parser = argparse.ArgumentParser(
@@ -96,13 +96,11 @@ model, optimizer_state_dict = load_model(
     args.tied,
     args.checkpoint_path,
 )
-
-optimizer = optim.Adam(model.parameters(), lr=args.lr)
+#optimizer = optim.Adam(model.parameters(), lr=args.lr)
+optimizer = optim.SGD(model.parameters(), lr=args.lr)
 if optimizer_state_dict is not None:
     optimizer.load_state_dict(optimizer_state_dict)
     logging.info("Loaded optimizer state from checkpoint")
-
-scaler = GradScaler()  # Initialize the gradient scaler
 
 ###############################################################################
 # Training code
@@ -147,25 +145,24 @@ def evaluate(data_source):
             data, targets = get_batch(data_source, i, args.bptt)
             data, targets = data.to(device), targets.to(device)
             
-            with autocast():
-                if args.classmodel == "CBR_RNN":
-                    cache = model.init_cache(data, args.nheads)
-                    output, hidden = model(data, cache, args.nheads)
-                    output_flat = output.reshape(-1, output.size(-1))
-                    targets_flat = targets.reshape(-1)
-                    total_loss += (
-                        len(data) * nn.CrossEntropyLoss()(output_flat, targets_flat).item()
-                    )
-                    del output, output_flat, targets_flat, cache
-                else:
-                    output, hidden = model(data, hidden)
-                    output_flat = output.view(-1, ntokens)
-                    total_loss += (
-                        len(data) * nn.CrossEntropyLoss()(output_flat, targets).item()
-                    )
-                    del output, output_flat
-                    hidden = repackage_hidden(hidden)
-            clear_memory()
+            if args.classmodel == "CBR_RNN":
+                cache = model.init_cache(data, args.nheads)
+                output, hidden = model(data, cache, args.nheads)
+                output_flat = output.reshape(-1, output.size(-1))
+                targets_flat = targets.reshape(-1)
+                total_loss += (
+                    len(data) * nn.CrossEntropyLoss()(output_flat, targets_flat).item()
+                )
+                del output, output_flat, targets_flat, cache
+            else:
+                output, hidden = model(data, hidden)
+                output_flat = output.view(-1, ntokens)
+                total_loss += (
+                    len(data) * nn.CrossEntropyLoss()(output_flat, targets).item()
+                )
+                del output, output_flat
+                hidden = repackage_hidden(hidden)
+            #clear_memory()
 
     return total_loss / (len(data_source) - 1)
 
@@ -195,7 +192,7 @@ def train():
         first_batch = first_batch.to(device)
         cache = model.init_cache(first_batch, args.nheads)
         del first_batch  # Clean up the temporary batch
-        clear_memory()
+        #clear_memory()
     else:
         hidden = move_to_device(model.init_hidden(args.batch_size), device)
     
@@ -203,59 +200,65 @@ def train():
         save_checkpoint(model, optimizer, args.name, epoch, 0)
         logging.info(f"Checkpoint saved before the first batch: {epoch}, batch {0}")
 
-    for batch, i in enumerate(range(0, train_data.size(0) - 1, args.bptt)):
-        data, targets = get_batch(train_data, i, args.bptt)
-        data, targets = data.to(device), targets.to(device)
-        optimizer.zero_grad()
+    # Initialize PyTorch profiler
+    with profile(
+        activities=[
+            ProfilerActivity.CPU,
+            ProfilerActivity.CUDA if torch.cuda.is_available() else ProfilerActivity.CPU
+        ],
+        schedule=torch.profiler.schedule(
+            wait=1,
+            warmup=1,
+            active=3,
+            repeat=1
+        ),
+        on_trace_ready=torch.profiler.tensorboard_trace_handler(f'./profiler_logs/{args.name}'),
+        record_shapes=True,
+        profile_memory=True,
+        with_stack=True
+    ) as prof:
+        for batch, i in enumerate(range(0, train_data.size(0) - 1, args.bptt)):
+            with record_function("batch_processing"):
+                data, targets = get_batch(train_data, i, args.bptt)
+                data, targets = data.to(device), targets.to(device)
+                optimizer.zero_grad()
 
-        # Use mixed precision training
-        with autocast():
-            if args.classmodel == "CBR_RNN":
-                output, hidden = model(data, cache, args.nheads)
-                output_flat = output.reshape(-1, output.size(-1))
-                targets_flat = targets.reshape(-1)
-                loss = criterion(output_flat, targets_flat)
-                
-                # Memory tracking
-                # if batch % args.log_interval == 0:
-                #     log_memory_usage(f"Batch {batch} ")
-                
-                del output, output_flat, targets_flat
-                clear_memory()
-            else:
-                hidden = repackage_hidden(hidden)
-                output, hidden = model(data, hidden)
-                loss = criterion(output.view(-1, ntokens), targets)
-                del output
-                clear_memory()
+                if args.classmodel == "CBR_RNN":
+                    with record_function("forward_pass"):
+                        output, hidden = model(data, cache, args.nheads)
+                        output_flat = output.reshape(-1, output.size(-1))
+                        targets_flat = targets.reshape(-1)
+                        loss = criterion(output_flat, targets_flat)
+                        
+                        del output, output_flat, targets_flat
+                else:
+                    with record_function("forward_pass"):
+                        hidden = repackage_hidden(hidden)
+                        output, hidden = model(data, hidden)
+                        loss = criterion(output.view(-1, ntokens), targets)
+                        del output
 
-        if torch.isnan(loss):
-            raise ValueError("NaN loss encountered")
-            
-        try:
-            # Scale loss and call backward
-            scaler.scale(loss).backward()
-            
-            # Unscale gradients and clip
-            scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
-            
-            # Step the optimizer
-            scaler.step(optimizer)
-            scaler.update()
-            
-        except RuntimeError as e:
-            logging.error(f"Error during backward pass: {str(e)}")
-            logging.error(f"Loss value: {loss.item()}")
-            logging.error(f"Gradients before backward:")
-            for name, param in model.named_parameters():
-                if param.grad is not None:
-                    logging.error(f"{name} - grad shape: {param.grad.shape}")
-            raise e
+                if torch.isnan(loss):
+                    raise ValueError("NaN loss encountered")
+                
+                try:
+                    with record_function("backward_pass"):
+                        loss.backward()
+                        torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
+                        optimizer.step()
+                    
+                except RuntimeError as e:
+                    logging.error(f"Error during backward pass: {str(e)}")
+                    logging.error(f"Loss value: {loss.item()}")
+                    logging.error(f"Gradients before backward:")
+                    for name, param in model.named_parameters():
+                        if param.grad is not None:
+                            logging.error(f"{name} - grad shape: {param.grad.shape}")
+                    raise e
 
         total_loss += loss.item()
-        del loss
-        clear_memory()
+        #del loss
+        #clear_memory()
 
         # Checkpoint and validation
         # if args.checkpoint_path and batch % args.batch_check == 0:
@@ -274,7 +277,8 @@ def train():
         #     model.train()  # Set back to training mode after evaluation
         #     clear_memory()
 
-        # Logging
+            
+                # Logging
         if batch % args.log_interval == 0 and batch > 0:
             cur_loss = total_loss / args.log_interval
             elapsed = time.time() - start_time
@@ -292,7 +296,8 @@ def train():
             )
             total_loss = 0
             start_time = time.time()
-
+        
+        prof.step()  # Step the profiler
 
 # Loop over epochs.
 try:

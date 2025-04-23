@@ -301,28 +301,32 @@ for checkpoint_file in tqdm.tqdm(
 
     acc = eval(model, test_dataloader, init_sentence)
     epoch_number = get_epoch_number(checkpoint_file)
-    original_accuracies_list.append({"epoch": epoch_number, "ablation": "none", **acc})
+    original_accuracies_list.append({
+        "epoch": epoch_number,
+        "model": checkpoint_file,
+        "ablation": "none",
+        **acc
+    })
 
-original_df = pd.DataFrame(original_accuracies_list)
-output_path_original = os.path.join(output_dir, f"{output_name_base}_original.csv")
-print(f"Saving original results to: {output_path_original}")
-original_df.to_csv(output_path_original, index=False)
-print(original_df)
+# Initialize the combined DataFrame with original results
+combined_df = pd.DataFrame(original_accuracies_list)
 
 # Perform ablation study for each layer and each hidden unit
-for layer_index in range(2):  # Assuming 2 layers
-    for unit_index in tqdm.tqdm(
-        range(args.nhid), desc=f"Ablating Layer {layer_index}, LSTM units"
-    ):
-        ablated_accuracies_list = []
-        for checkpoint_file in checkpoint_files:
-            checkpoint_path = os.path.join(checkpoint_dir, checkpoint_file)
-            model = lstm(
-                "LSTM", len(dictionary), args.emsize, args.nhid, 2, 0.2, False
-            ).to(device)
-            with open(checkpoint_path, "rb") as f:
-                state_dict = torch.load(f, map_location=device)
-                model.load_state_dict(state_dict)
+for checkpoint_file in checkpoint_files:
+    checkpoint_path = os.path.join(checkpoint_dir, checkpoint_file)
+    model = lstm(
+        "LSTM", len(dictionary), args.emsize, args.nhid, 2, 0.2, False
+    ).to(device)
+    with open(checkpoint_path, "rb") as f:
+        state_dict = torch.load(f['model_state_dict'], map_location=device)
+        model.load_state_dict(state_dict)
+                
+    for layer_index in range(2):  # Assuming 2 layers
+        for unit_index in tqdm.tqdm(
+            range(args.nhid), desc=f"Ablating Layer {layer_index}, LSTM units"
+        ):
+            ablated_accuracies_list = []
+            
 
             # Ablate the current unit in the current layer
             ablate_lstm_unit(model, layer_index, unit_index)
@@ -332,21 +336,21 @@ for layer_index in range(2):  # Assuming 2 layers
             ablated_accuracies_list.append(
                 {
                     "epoch": epoch_number,
+                    "model": checkpoint_file,
                     "ablation": f"layer_{layer_index}_unit_{unit_index}",
                     **acc,
                 }
             )
 
-        ablated_df = pd.DataFrame(ablated_accuracies_list)
-        output_path_ablated = os.path.join(
-            output_dir,
-            f"{output_name_base}_ablated_layer_{layer_index}_unit_{unit_index}.csv",
-        )
-        print(
-            f"Saving ablation results for Layer {layer_index}, Unit {unit_index} to: {output_path_ablated}"
-        )
-        ablated_df.to_csv(output_path_ablated, index=False)
-        print(ablated_df)
+    # Append ablation results to the combined DataFrame
+    ablated_df = pd.DataFrame(ablated_accuracies_list)
+    combined_df = pd.concat([combined_df, ablated_df], ignore_index=True)
+
+# Save the combined DataFrame
+output_path = os.path.join(output_dir, f"{output_name_base}_combined.csv")
+print(f"Saving all results to: {output_path}")
+combined_df.to_csv(output_path, index=False)
+print(combined_df)
 
 print("LSTM unit ablation study complete (for both layers).")
 # Example to run on CPU:
