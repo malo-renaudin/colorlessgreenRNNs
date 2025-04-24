@@ -26,12 +26,14 @@ from utils import (
     move_to_device,
     save_val_loss_data,
     load_model,
+    get_memory_usage,
+    log_memory_usage,
+    clear_memory
 )
 import torch.optim as optim
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
 import multiprocessing as mp
-from torch.profiler import profile, record_function, ProfilerActivity
 
 
 parser = argparse.ArgumentParser(
@@ -106,32 +108,7 @@ if optimizer_state_dict is not None:
 # Training code
 ###############################################################################
 
-def get_memory_usage():
-    """Get current memory usage in MB"""
-    process = psutil.Process(os.getpid())
-    if torch.cuda.is_available():
-        gpu_mem = torch.cuda.memory_allocated() / 1024**2
-        gpu_cache = torch.cuda.memory_reserved() / 1024**2
-        return {
-            'cpu_mem': process.memory_info().rss / 1024**2,
-            'gpu_mem': gpu_mem,
-            'gpu_cache': gpu_cache
-        }
-    return {'cpu_mem': process.memory_info().rss / 1024**2}
 
-def log_memory_usage(prefix=""):
-    """Log current memory usage"""
-    mem = get_memory_usage()
-    if torch.cuda.is_available():
-        logging.info(f"{prefix}Memory Usage - CPU: {mem['cpu_mem']:.2f}MB, GPU: {mem['gpu_mem']:.2f}MB, GPU Cache: {mem['gpu_cache']:.2f}MB")
-    else:
-        logging.info(f"{prefix}Memory Usage - CPU: {mem['cpu_mem']:.2f}MB")
-
-def clear_memory():
-    """Clear both Python and CUDA memory"""
-    gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
 
 def evaluate(data_source):
     # Turn on evaluation mode which disables dropout.
@@ -175,17 +152,22 @@ val_loss_data = []
 
 def train():
     # Enable anomaly detection
+    start_time_anomaly = time.time()
     torch.autograd.set_detect_anomaly(True)
+    logging.info(f"Time to enable anomaly detection: {time.time() - start_time_anomaly:.2f}s")
     
     # Turn on training mode which enables dropout.
+    start_time_train = time.time()
     model.train()
     total_loss = 0
     start_time = time.time()
+    logging.info(f"Time to set training mode: {time.time() - start_time_train:.2f}s")
     
     # Log initial memory usage
     #log_memory_usage("Initial ")
     
     # Initialize cache once per epoch for CBR_RNN
+    start_time_init = time.time()
     if args.classmodel == "CBR_RNN":
         # Get first batch to determine dimensions
         first_batch, _ = get_batch(train_data, 0, args.bptt)
@@ -195,66 +177,95 @@ def train():
         #clear_memory()
     else:
         hidden = move_to_device(model.init_hidden(args.batch_size), device)
+    logging.info(f"Time to initialize cache/hidden: {time.time() - start_time_init:.2f}s")
     
     if epoch == 1:
+        start_time_checkpoint = time.time()
         save_checkpoint(model, optimizer, args.name, epoch, 0)
         logging.info(f"Checkpoint saved before the first batch: {epoch}, batch {0}")
+        logging.info(f"Time to save initial checkpoint: {time.time() - start_time_checkpoint:.2f}s")
 
-    # Initialize PyTorch profiler
-    with profile(
-        activities=[
-            ProfilerActivity.CPU,
-            ProfilerActivity.CUDA if torch.cuda.is_available() else ProfilerActivity.CPU
-        ],
-        schedule=torch.profiler.schedule(
-            wait=1,
-            warmup=1,
-            active=3,
-            repeat=1
-        ),
-        on_trace_ready=torch.profiler.tensorboard_trace_handler(f'./profiler_logs/{args.name}'),
-        record_shapes=True,
-        profile_memory=True,
-        with_stack=True
-    ) as prof:
-        for batch, i in enumerate(range(0, train_data.size(0) - 1, args.bptt)):
-            with record_function("batch_processing"):
-                data, targets = get_batch(train_data, i, args.bptt)
-                data, targets = data.to(device), targets.to(device)
-                optimizer.zero_grad()
+    for batch, i in enumerate(range(0, train_data.size(0) - 1, args.bptt)):
+        start_time_batch = time.time()
+        
+        # Get batch and move to device
+        start_time_data = time.time()
+        data, targets = get_batch(train_data, i, args.bptt)
+        data, targets = data.to(device), targets.to(device)
+        logging.info(f"Time to prepare batch data: {time.time() - start_time_data:.2f}s")
+        
+        start_time_optim = time.time()
+        optimizer.zero_grad()
+        logging.info(f"Time to zero gradients: {time.time() - start_time_optim:.2f}s")
 
-                if args.classmodel == "CBR_RNN":
-                    with record_function("forward_pass"):
-                        output, hidden = model(data, cache, args.nheads)
-                        output_flat = output.reshape(-1, output.size(-1))
-                        targets_flat = targets.reshape(-1)
-                        loss = criterion(output_flat, targets_flat)
-                        
-                        del output, output_flat, targets_flat
-                else:
-                    with record_function("forward_pass"):
-                        hidden = repackage_hidden(hidden)
-                        output, hidden = model(data, hidden)
-                        loss = criterion(output.view(-1, ntokens), targets)
-                        del output
+        # Forward pass
+        start_time_forward = time.time()
+        if args.classmodel == "CBR_RNN":
+            # Forward pass through CBR_RNN model
+            logging.info("Starting CBR_RNN forward pass...")
+            start_time_model = time.time()
+            output, hidden = model(data, cache, args.nheads)
+            logging.info(f"Time for model forward computation: {time.time() - start_time_model:.2f}s")
 
-                if torch.isnan(loss):
-                    raise ValueError("NaN loss encountered")
-                
-                try:
-                    with record_function("backward_pass"):
-                        loss.backward()
-                        torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
-                        optimizer.step()
-                    
-                except RuntimeError as e:
-                    logging.error(f"Error during backward pass: {str(e)}")
-                    logging.error(f"Loss value: {loss.item()}")
-                    logging.error(f"Gradients before backward:")
-                    for name, param in model.named_parameters():
-                        if param.grad is not None:
-                            logging.error(f"{name} - grad shape: {param.grad.shape}")
-                    raise e
+            # Reshape outputs and targets
+            start_time_reshape = time.time()
+            output_flat = output.reshape(-1, output.size(-1))
+            targets_flat = targets.reshape(-1)
+            logging.info(f"Time for reshaping tensors: {time.time() - start_time_reshape:.2f}s")
+
+            # Calculate loss
+            start_time_loss = time.time()
+            loss = criterion(output_flat, targets_flat)
+            logging.info(f"Time for loss computation: {time.time() - start_time_loss:.2f}s")
+            
+            del output, output_flat, targets_flat
+        else:
+            # Forward pass through standard RNN model
+            logging.info("Starting standard RNN forward pass...")
+            start_time_repackage = time.time()
+            hidden = repackage_hidden(hidden)
+            logging.info(f"Time for repackaging hidden state: {time.time() - start_time_repackage:.2f}s")
+
+            start_time_model = time.time()
+            output, hidden = model(data, hidden)
+            logging.info(f"Time for model forward computation: {time.time() - start_time_model:.2f}s")
+
+            start_time_loss = time.time()
+            loss = criterion(output.view(-1, ntokens), targets)
+            logging.info(f"Time for loss computation: {time.time() - start_time_loss:.2f}s")
+            del output
+        logging.info(f"Total time for forward pass: {time.time() - start_time_forward:.2f}s")
+
+        if torch.isnan(loss):
+            raise ValueError("NaN loss encountered")
+        
+        # Backward pass
+        start_time_backward = time.time()
+        try:
+            # Compute gradients
+            start_time_backward_loss = time.time()
+            loss.backward()
+            logging.info(f"Time for loss.backward(): {time.time() - start_time_backward_loss:.2f}s")
+
+            # Gradient clipping
+            start_time_clip = time.time()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
+            logging.info(f"Time for gradient clipping: {time.time() - start_time_clip:.2f}s")
+
+            # Optimizer step
+            start_time_step = time.time()
+            optimizer.step()
+            logging.info(f"Time for optimizer step: {time.time() - start_time_step:.2f}s")
+            
+        except RuntimeError as e:
+            logging.error(f"Error during backward pass: {str(e)}")
+            logging.error(f"Loss value: {loss.item()}")
+            logging.error(f"Gradients before backward:")
+            for name, param in model.named_parameters():
+                if param.grad is not None:
+                    logging.error(f"{name} - grad shape: {param.grad.shape}")
+            raise e
+        logging.info(f"Total time for backward pass and optimization: {time.time() - start_time_backward:.2f}s")
 
         total_loss += loss.item()
         #del loss
@@ -278,10 +289,11 @@ def train():
         #     clear_memory()
 
             
-                # Logging
+        # Logging
         if batch % args.log_interval == 0 and batch > 0:
             cur_loss = total_loss / args.log_interval
             elapsed = time.time() - start_time
+            start_time_logging = time.time()
             logging.info(
                 "| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.4f} | ms/batch {:5.2f} | "
                 "loss {:5.2f} | ppl {:8.2f}".format(
@@ -294,10 +306,10 @@ def train():
                     math.exp(cur_loss),
                 )
             )
+            logging.info(f"Total time for batch {batch}: {time.time() - start_time_batch:.2f}s")
+            logging.info(f"Time for logging: {time.time() - start_time_logging:.2f}s")
             total_loss = 0
             start_time = time.time()
-        
-        prof.step()  # Step the profiler
 
 # Loop over epochs.
 try:
@@ -321,6 +333,7 @@ try:
         logging.info("-" * 89)
 
         # Save checkpoint at end of epoch
+        checkpoint_start_time = time.time()
         save_checkpoint(model, optimizer, args.name, epoch)
         val_loss_data.append(
             {"epoch": epoch, "batch": "end_of_epoch", "val_loss": val_loss}
@@ -328,6 +341,7 @@ try:
         filename = f"epoch{epoch}"
         save_val_loss_data(val_loss_data, subfolder, filename)
         model.train()  # Set back to training mode after evaluation
+        logging.info(f"Time to save checkpoint and validation data: {time.time() - checkpoint_start_time:.2f}s")
 
 except KeyboardInterrupt:
     logging.info("-" * 89)
@@ -337,10 +351,13 @@ except KeyboardInterrupt:
 # val_loss_df.to_csv('val_loss.csv', index=False)
 
 # Load the best saved model.
+load_start_time = time.time()
 with open(args.save, "rb") as f:
     model = torch.load(f)
+logging.info(f"Time to load best model: {time.time() - load_start_time:.2f}s")
 
 # Run on test data
+test_start_time = time.time()
 test_loss = evaluate(test_data)
 logging.info("=" * 89)
 logging.info(
@@ -348,5 +365,5 @@ logging.info(
         test_loss, math.exp(test_loss)
     )
 )
+logging.info(f"Time to evaluate on test data: {time.time() - test_start_time:.2f}s")
 logging.info("=" * 89)
-

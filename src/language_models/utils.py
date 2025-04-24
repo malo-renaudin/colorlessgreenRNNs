@@ -10,8 +10,8 @@ import torch
 import os
 import logging
 import pandas as pd
-
-
+import psutil
+import gc
 def repackage_hidden(h):
     """Detaches hidden states from their history."""
     if isinstance(h, torch.Tensor):
@@ -109,3 +109,30 @@ def load_model(
 
     model = model.to(device)
     return model, optimizer_state_dict
+
+def get_memory_usage():
+    """Get current memory usage in MB"""
+    process = psutil.Process(os.getpid())
+    if torch.cuda.is_available():
+        gpu_mem = torch.cuda.memory_allocated() / 1024**2
+        gpu_cache = torch.cuda.memory_reserved() / 1024**2
+        return {
+            'cpu_mem': process.memory_info().rss / 1024**2,
+            'gpu_mem': gpu_mem,
+            'gpu_cache': gpu_cache
+        }
+    return {'cpu_mem': process.memory_info().rss / 1024**2}
+
+def log_memory_usage(prefix=""):
+    """Log current memory usage"""
+    mem = get_memory_usage()
+    if torch.cuda.is_available():
+        logging.info(f"{prefix}Memory Usage - CPU: {mem['cpu_mem']:.2f}MB, GPU: {mem['gpu_mem']:.2f}MB, GPU Cache: {mem['gpu_cache']:.2f}MB")
+    else:
+        logging.info(f"{prefix}Memory Usage - CPU: {mem['cpu_mem']:.2f}MB")
+
+def clear_memory():
+    """Clear both Python and CUDA memory"""
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
