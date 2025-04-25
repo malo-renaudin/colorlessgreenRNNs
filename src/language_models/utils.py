@@ -21,6 +21,7 @@ def repackage_hidden(h):
 
 
 def get_batch(source, i, seq_length):
+    """Gets a single batch from source data at position i"""
     seq_len = min(seq_length, len(source) - 1 - i)
     data = source[i : i + seq_len]
     # predict the sequences shifted by one word
@@ -39,6 +40,30 @@ def batchify(data, bsz, device):
     #     #data = data.cuda()
     data = data.to(device)
     return data
+
+
+def shuffled_batchify(data, bsz, device):
+    """Similar to batchify but shuffles data first"""
+    # Get the original data size
+    data_size = data.size(0)
+    
+    # Create shuffled indices
+    indices = torch.randperm(data_size)
+    
+    # Shuffle the data using indices
+    shuffled_data = data[indices]
+    
+    # Now batchify as usual
+    nbatch = shuffled_data.size(0) // bsz
+    # Trim off any extra elements that wouldn't cleanly fit
+    shuffled_data = shuffled_data.narrow(0, 0, nbatch * bsz)
+    # Evenly divide the data across the bsz batches
+    shuffled_data = shuffled_data.view(bsz, -1).t().contiguous()
+    
+    # Move to device
+    shuffled_data = shuffled_data.to(device)
+    
+    return shuffled_data
 
 
 # inclure batch index en argument ici comme ça on désengorge script principal
@@ -136,3 +161,42 @@ def clear_memory():
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
+
+class BatchIndicesGenerator:
+    """Generates batch indices for training, with option to shuffle"""
+    def __init__(self, data_size, bptt, shuffle=False):
+        """
+        Args:
+            data_size: Size of the first dimension of the data tensor
+            bptt: Sequence length for batches
+            shuffle: Whether to shuffle batch order
+        """
+        self.data_size = data_size
+        self.bptt = bptt
+        self.shuffle = shuffle
+        self.indices = self._create_indices()
+        
+    def _create_indices(self):
+        """Create batch starting indices"""
+        # Calculate all possible starting positions
+        indices = list(range(0, self.data_size - 1, self.bptt))
+        
+        # Shuffle if requested
+        if self.shuffle:
+            import random
+            random.shuffle(indices)
+            
+        return indices
+    
+    def __len__(self):
+        """Number of batches"""
+        return len(self.indices)
+    
+    def __iter__(self):
+        """Iterate through batch indices"""
+        for idx in self.indices:
+            yield idx
+            
+    def reshuffle(self):
+        """Reshuffle indices for next epoch"""
+        self.indices = self._create_indices()

@@ -1,5 +1,13 @@
 import sys
 import os
+
+# Get the directory of the current script
+script_dir = os.path.dirname(os.path.abspath(__file__))
+# Go up one level from the script's directory (evaluation_notebooks)
+parent_dir = os.path.dirname(script_dir)
+# Join with 'src' to get the correct path to the src directory
+src_dir = os.path.join(parent_dir, "src")
+sys.path.append(os.path.abspath(src_dir))
 import torch
 from torch.utils.data import Dataset, DataLoader
 import tqdm
@@ -176,9 +184,9 @@ def eval(model, test_dataloader, init_sentence):
         for batch in test_dataloader:
             out = None
             written = batch["sentence"]
-            sentence = batch["encoded_sentence"]
-            correct = batch["encoded_correct"]
-            wrong = batch["encoded_wrong"]
+            sentence = batch["encoded_sentence"].to(device)
+            correct = batch["encoded_correct"].to(device)
+            wrong = batch["encoded_wrong"].to(device)
             condition = batch["condition"]
             batch_size = sentence.size(0)
             hidden = (
@@ -186,7 +194,7 @@ def eval(model, test_dataloader, init_sentence):
                 init_h[1].expand(-1, batch_size, -1).contiguous(),
             )
             for w in range(sentence.shape[1] - 1):
-                word = torch.autograd.Variable(sentence[:, w].unsqueeze(0))
+                word = torch.autograd.Variable(sentence[:, w].unsqueeze(0)).to(device)
                 out, hidden = model(word, hidden)
 
             log_probs = torch.nn.functional.log_softmax(out, dim=-1)
@@ -297,7 +305,7 @@ for checkpoint_file in tqdm.tqdm(
     )
     with open(checkpoint_path, "rb") as f:
         state_dict = torch.load(f, map_location=device)
-        model.load_state_dict(state_dict)
+        model.load_state_dict(state_dict['model_state_dict'])
 
     acc = eval(model, test_dataloader, init_sentence)
     epoch_number = get_epoch_number(checkpoint_file)
@@ -318,12 +326,12 @@ for checkpoint_file in checkpoint_files:
         "LSTM", len(dictionary), args.emsize, args.nhid, 2, 0.2, False
     ).to(device)
     with open(checkpoint_path, "rb") as f:
-        state_dict = torch.load(f['model_state_dict'], map_location=device)
-        model.load_state_dict(state_dict)
+        state_dict = torch.load(f, map_location=device)
+        model.load_state_dict(state_dict['model_state_dict'])
                 
     for layer_index in range(2):  # Assuming 2 layers
         for unit_index in tqdm.tqdm(
-            range(args.nhid), desc=f"Ablating Layer {layer_index}, LSTM units"
+            range(args.nhid), desc=f"Ablating Layer {layer_index}, LSTM units {unit_index}"
         ):
             ablated_accuracies_list = []
             

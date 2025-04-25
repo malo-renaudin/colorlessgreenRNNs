@@ -91,3 +91,16 @@ lm_parser.add_argument(
     default=None,
     help="number of the epoch for input checkpoint",
 )
+lm_parser.add_argument(
+    "--vocab",
+    type=str,
+    default=None,
+    help="path to the vocabulary file",
+)
+lm_parser.add_argument(
+    "--optimizer",
+    type=str,
+    default="SGD",
+    help="optimizer to use (SGD, Adam)",
+)
+

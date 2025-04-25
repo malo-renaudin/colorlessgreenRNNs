@@ -3,10 +3,10 @@ import os
 from pathlib import Path
 
 # Path where checkpoints are stored
-checkpoint_dir_str = "/scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/lstm_sgd_lr10"
+checkpoint_dir_str = "/scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/lstm_sgd_lr10_no_clip"
 checkpoint_files = sorted(os.listdir(checkpoint_dir_str))  # Ensure chronological order
 checkpoint_dir = Path(checkpoint_dir_str)
-weights_dir = checkpoint_dir / "weights" / "sgd_lr10_training" # Define the weights directory
+weights_dir = checkpoint_dir / "weights" # Define the weights directory
 
 # Create the weights directory if it doesn't exist
 weights_dir.mkdir(parents=True, exist_ok=True)

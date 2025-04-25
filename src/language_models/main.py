@@ -15,7 +15,7 @@ import torch.nn as nn
 import os
 import gc
 import psutil
-from dictionary_corpus import Corpus
+from dictionary_corpus import Corpus, TextDataset, Vocabulary, word_tokenizer, collate_batch
 import model
 from lm_argparser import lm_parser
 from utils import (
@@ -34,6 +34,7 @@ import torch.optim as optim
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
 import multiprocessing as mp
+from simple_data import TokenDataset, get_batch_iterators
 
 
 parser = argparse.ArgumentParser(
@@ -63,21 +64,64 @@ print(f"Using device: {device}")
 # Load data
 ###############################################################################
 
+# Load data
 logging.info("Loading data")
 start = time.time()
-corpus = Corpus(args.data)
-logging.info("( %.2f )" % (time.time() - start))
-ntokens = len(corpus.dictionary)
-logging.info("Vocab size %d", ntokens)
 
-# Batchify the data
-logging.info("Batchying..")
+# # Create corpus
+# corpus = Corpus(args.data)
+# logging.info("( %.2f )" % (time.time() - start))
+# ntokens = len(corpus.dictionary)
+# logging.info("Vocab size %d", ntokens)
+
+# # Prepare data with batchify
+# logging.info("Preparing batches...")
+# eval_batch_size = 10
+
+# # Use regular batchify for all data
+# train_data = batchify(corpus.train, args.batch_size, device)
+# val_data = batchify(corpus.valid, eval_batch_size, device)
+# test_data = batchify(corpus.test, eval_batch_size, device)
+
+# logging.info(f"Prepared data - train shape: {train_data.shape}")
+TRAIN_FILE = os.path.join(args.data, "train.txt")
+VALID_FILE = os.path.join(args.data, "valid.txt")
+TEST_FILE = os.path.join(args.data, "test.txt")
+VOCAB_FILE = os.path.join(args.data, "vocab.txt")
+
+vocab = Vocabulary(filepath=VOCAB_FILE, add_special_tokens=True)
+ntokens = len(vocab)
+
+train_dataset = TextDataset(TRAIN_FILE, word_tokenizer, vocab)
+val_dataset = TextDataset(VALID_FILE, word_tokenizer, vocab)
+test_dataset = TextDataset(TEST_FILE, word_tokenizer, vocab)
+
+collate_fn = lambda batch: collate_batch(batch, vocab.pad_idx)
+
+train_loader = DataLoader(train_dataset,
+                                  batch_size=args.batch_size,
+                                  shuffle=True, 
+                                  collate_fn=collate_fn,
+                                  num_workers=6,
+                                  pin_memory=True)
+
 eval_batch_size = 10
-train_data = batchify(corpus.train, args.batch_size, device)
-val_data = batchify(corpus.valid, eval_batch_size, device)
-test_data = batchify(corpus.test, eval_batch_size, device)
 
-criterion = nn.CrossEntropyLoss()
+val_loader = DataLoader(val_dataset,
+                                  batch_size=eval_batch_size,
+                                  shuffle=False, 
+                                  collate_fn=collate_fn,
+                                  num_workers=6,
+                                  pin_memory=True)
+
+test_loader = DataLoader(test_dataset,
+                                  batch_size=eval_batch_size,
+                                  shuffle=False, 
+                                  collate_fn=collate_fn,
+                                  num_workers=6,
+                                  pin_memory=True)
+                                  
+criterion = nn.CrossEntropyLoss(ignore_index=vocab.pad_idx)
 
 ###############################################################################
 # Build the model
@@ -98,8 +142,14 @@ model, optimizer_state_dict = load_model(
     args.tied,
     args.checkpoint_path,
 )
-#optimizer = optim.Adam(model.parameters(), lr=args.lr)
-optimizer = optim.SGD(model.parameters(), lr=args.lr)
+if args.optimizer == "SGD":
+    lr=10
+    optimizer = optim.SGD(model.parameters(), lr=lr)
+elif args.optimizer == "Adam":
+    lr=0.001
+    optimizer = optim.Adam(model.parameters(), lr=lr)
+else:
+    raise ValueError(f"Invalid optimizer: {args.optimizer}")
 if optimizer_state_dict is not None:
     optimizer.load_state_dict(optimizer_state_dict)
     logging.info("Loaded optimizer state from checkpoint")
@@ -108,8 +158,7 @@ if optimizer_state_dict is not None:
 # Training code
 ###############################################################################
 
-
-
+# Original evaluation function
 def evaluate(data_source):
     # Turn on evaluation mode which disables dropout.
     model.eval()
@@ -118,8 +167,8 @@ def evaluate(data_source):
         hidden = move_to_device(model.init_hidden(eval_batch_size), device)
 
     with torch.no_grad():
-        for i in range(0, data_source.size(0) - 1, args.bptt):
-            data, targets = get_batch(data_source, i, args.bptt)
+        #for i in range(0, data_source.size(0) - 1, args.bptt):
+        for i, (data, targets) in enumerate(test_loader):
             data, targets = data.to(device), targets.to(device)
             
             if args.classmodel == "CBR_RNN":
@@ -139,10 +188,8 @@ def evaluate(data_source):
                 )
                 del output, output_flat
                 hidden = repackage_hidden(hidden)
-            #clear_memory()
 
-    return total_loss / (len(data_source) - 1)
-
+    return total_loss / (data_source.size(0) - 1)
 
 # NEW : create folder for checkpointing
 main_folder = "/scratch2/mrenaudin/colorlessgreenRNNs/val_loss"
@@ -151,25 +198,19 @@ os.makedirs(subfolder, exist_ok=True)
 val_loss_data = []
 
 def train():
-    # Enable anomaly detection
-    torch.autograd.set_detect_anomaly(True)
-    
-    # Turn on training mode which enables dropout.
+    # Turn on training mode which enables dropout
     model.train()
     total_loss = 0
     start_time = time.time()
-    
-    # Log initial memory usage
-    #log_memory_usage("Initial ")
+
     
     # Initialize cache once per epoch for CBR_RNN
     if args.classmodel == "CBR_RNN":
         # Get first batch to determine dimensions
-        first_batch, _ = get_batch(train_data, 0, args.bptt)
+        first_batch, _ = next(iter(train_loader))
         first_batch = first_batch.to(device)
         cache = model.init_cache(first_batch, args.nheads)
         del first_batch  # Clean up the temporary batch
-        #clear_memory()
     else:
         hidden = move_to_device(model.init_hidden(args.batch_size), device)
     
@@ -177,12 +218,12 @@ def train():
         save_checkpoint(model, optimizer, args.name, epoch, 0)
         logging.info(f"Checkpoint saved before the first batch: {epoch}, batch {0}")
 
-    for batch, i in enumerate(range(0, train_data.size(0) - 1, args.bptt)):
-        
-        # Get batch and move to device
-        data, targets = get_batch(train_data, i, args.bptt)
+    # Regular sequential iteration through batches of shuffled data
+    #for batch, i in enumerate(range(0, train_data.size(0) - 1, args.bptt)):
+    for i, (data, targets) in enumerate(train_loader):
+        # Get batch
+        #data, targets = get_batch(train_data, i, args.bptt)
         data, targets = data.to(device), targets.to(device)
-        
         optimizer.zero_grad()
 
         # Forward pass
@@ -200,11 +241,11 @@ def train():
             del output, output_flat, targets_flat
         else:
             # Forward pass through standard RNN model
+            data=data.transpose(0,1)
             hidden = repackage_hidden(hidden)
-
             output, hidden = model(data, hidden)
 
-            loss = criterion(output.view(-1, ntokens), targets)
+            loss = criterion(output.view(-1, ntokens), targets.view(-1))
             del output
 
         if torch.isnan(loss):
@@ -253,16 +294,16 @@ def train():
 
             
         # Logging
-        if batch % args.log_interval == 0 and batch > 0:
+        if (i+1) % args.log_interval == 0 and i > 0:
             cur_loss = total_loss / args.log_interval
             elapsed = time.time() - start_time
             logging.info(
                 "| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.4f} | ms/batch {:5.2f} | "
                 "loss {:5.2f} | ppl {:8.2f}".format(
                     epoch,
-                    batch,
-                    len(train_data) // args.bptt,
-                    args.lr,  # Use initial learning rate
+                    i+1,
+                    len(train_dataset)//args.batch_size,
+                    lr,
                     elapsed * 1000 / args.log_interval,
                     cur_loss,
                     math.exp(cur_loss),
@@ -282,7 +323,7 @@ try:
         epoch_start_time = time.time()
         train()
 
-        val_loss = evaluate(val_data)
+        val_loss = evaluate(val_dataset)
         logging.info("-" * 89)
         logging.info(
             "| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.2f} | "
@@ -316,7 +357,7 @@ logging.info(f"Time to load best model: {time.time() - load_start_time:.2f}s")
 
 # Run on test data
 test_start_time = time.time()
-test_loss = evaluate(test_data)
+test_loss = evaluate(test_dataset)
 logging.info("=" * 89)
 logging.info(
     "| End of training | test loss {:5.2f} | test ppl {:8.2f}".format(

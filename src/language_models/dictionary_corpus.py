@@ -10,6 +10,10 @@ import torch
 from collections import defaultdict
 import logging
 import pickle
+from torch.utils.data import Dataset, DataLoader
+from torch.nn.utils.rnn import pad_sequence
+
+
 
 
 class Dictionary(object):
@@ -131,3 +135,138 @@ def tokenize(dictionary, path_or_sentence, is_path=True):
             all_tokens.append(ids)
 
         return all_tokens
+
+
+
+########################################################
+# New implementation with padding and masking and shuffling by sentence
+########################################################
+
+class Vocabulary:
+    def __init__(self, filepath=None, add_special_tokens=True):
+        self.word2idx = {}
+        self.idx2word = []
+        self.special_tokens = []
+
+        if add_special_tokens:
+            self.add_special_token("<pad>") 
+            self.add_special_token("<unk>")
+
+        if filepath:
+            self.load_vocab(filepath)
+
+    def add_special_token(self, token):
+        if token not in self.word2idx:
+            self.idx2word.append(token)
+            self.word2idx[token] = len(self.word2idx)
+            self.special_tokens.append(token)
+
+    def add_word(self, word):
+        if word not in self.word2idx:
+            self.idx2word.append(word)
+            self.word2idx[word] = len(self.word2idx)
+
+    def load_vocab(self, filepath):
+        print(f"Loading vocabulary from: {filepath}")
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                for word in f:
+                    word = word.strip()
+                    if word: # Avoid empty lines
+                        self.add_word(word)
+            print(f"Vocabulary loaded. Size: {len(self)}")
+        except FileNotFoundError:
+            print(f"Error: Vocabulary file not found at {filepath}")
+            # Optionally, you could build vocab from training data here if needed
+            raise # Re-raise the exception or handle differently
+
+    def __len__(self):
+        return len(self.idx2word)
+
+    def get_index(self, word):
+        return self.word2idx.get(word, self.word2idx["<unk>"])
+
+    def get_word(self, index):
+        if 0 <= index < len(self.idx2word):
+            return self.idx2word[index]
+        return "<unk>" # Or raise an error
+
+    @property
+    def pad_idx(self):
+        return self.word2idx["<pad>"]
+
+    @property
+    def unk_idx(self):
+        return self.word2idx["<unk>"]
+    
+def word_tokenizer(text):
+    return text.split()
+
+class TextDataset(Dataset):
+    def __init__(self, filepath, tokenizer, vocab):
+        self.filepath = filepath
+        self.tokenizer = tokenizer
+        self.vocab = vocab
+        self.sentences_as_indices = []
+
+        print(f"Loading and processing data from: {filepath}")
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                for line in f:
+                    sentence = line.strip()
+                    if sentence: # Skip empty lines
+                        tokens = self.tokenizer(sentence)
+                        indices = [self.vocab.get_index(token) for token in tokens]
+                        # Convert to tensor for easier handling later
+                        self.sentences_as_indices.append(torch.tensor(indices, dtype=torch.long))
+            print(f"Loaded {len(self.sentences_as_indices)} sentences.")
+        except FileNotFoundError:
+            print(f"Error: Data file not found at {filepath}")
+            raise # Re-raise the exception
+
+    def __len__(self):
+        return len(self.sentences_as_indices)
+
+    def __getitem__(self, idx):
+        return self.sentences_as_indices[idx]
+    
+def collate_batch(batch, pad_idx):
+    """
+    Collates sequences of varying lengths into a batch.
+
+    Args:
+        batch (list): A list of tensors, where each tensor is a sequence of indices.
+        pad_idx (int): The index used for padding.
+
+    Returns:
+        tuple:
+            - padded_sequences (torch.Tensor): Batch of sequences, padded to the
+              length of the longest sequence in the batch (batch_size, max_seq_len).
+            - padding_mask (torch.Tensor): Boolean tensor indicating padding positions.
+              'True' for non-pad tokens, 'False' for pad tokens (batch_size, max_seq_len).
+              This mask format is often useful for masking loss or in attention.
+    """
+
+
+    # Pad the input sequences
+    input_sequences = pad_sequence(batch, batch_first=True, padding_value=pad_idx)
+    batch_size, max_seq_len = input_sequences.shape
+
+    # # Create the padding mask for the inputs
+    # # True where input is NOT pad_idx, False where it is pad_idx
+    # input_mask = (input_sequences != pad_idx)
+
+    # Create the target sequences by shifting the inputs left
+    # Target for input token at index `t` is the token at `t+1`
+    # Slice to remove the first token of each sequence
+    target_sequences_shifted = input_sequences[:, 1:]
+
+    # Create a tensor of pad tokens to append to the end of each target sequence
+    # Shape: (batch_size, 1)
+    pad_tensor = torch.full((batch_size, 1), pad_idx, dtype=torch.long, device=input_sequences.device)
+
+    # Concatenate the shifted sequence with the padding tensor
+    # Now target_sequences has the same shape as input_sequences
+    target_sequences = torch.cat([target_sequences_shifted, pad_tensor], dim=1)
+
+    return input_sequences, target_sequences#, input_mask
