@@ -68,7 +68,7 @@ print(f"Using device: {device}")
 logging.info("Loading data")
 start = time.time()
 
-# # Create corpus
+# # Old way to load data (from colorlessgreenRNNs)
 # corpus = Corpus(args.data)
 # logging.info("( %.2f )" % (time.time() - start))
 # ntokens = len(corpus.dictionary)
@@ -95,7 +95,7 @@ ntokens = len(vocab)
 train_dataset = TextDataset(TRAIN_FILE, word_tokenizer, vocab)
 val_dataset = TextDataset(VALID_FILE, word_tokenizer, vocab)
 test_dataset = TextDataset(TEST_FILE, word_tokenizer, vocab)
-
+clear_memory()
 collate_fn = lambda batch: collate_batch(batch, vocab.pad_idx)
 
 train_loader = DataLoader(train_dataset,
@@ -142,6 +142,21 @@ model, optimizer_state_dict = load_model(
     args.tied,
     args.checkpoint_path,
 )
+
+# if torch.cuda.is_available() and hasattr(torch, 'compile'):
+#     model = torch.compile(
+#         model,
+#         mode="reduce-overhead",  # Focus on memory efficiency
+#         fullgraph=True,  # Compile the full graph when possible
+#     )
+#     logging.info("Applied torch.compile to the model with memory optimization")
+# else:
+#     logging.info("torch.compile not available, skipping compilation")
+
+###############################################################################
+# Optimizer
+###############################################################################
+
 if args.optimizer == "SGD":
     lr=10
     optimizer = optim.SGD(model.parameters(), lr=lr)
@@ -155,7 +170,7 @@ if optimizer_state_dict is not None:
     logging.info("Loaded optimizer state from checkpoint")
 
 ###############################################################################
-# Training code
+# Evaluation
 ###############################################################################
 
 # Original evaluation function
@@ -197,6 +212,10 @@ subfolder = os.path.join(main_folder, args.name)
 os.makedirs(subfolder, exist_ok=True)
 val_loss_data = []
 
+###############################################################################
+# Training
+###############################################################################
+
 def train():
     # Turn on training mode which enables dropout
     model.train()
@@ -209,7 +228,7 @@ def train():
         # Get first batch to determine dimensions
         first_batch, _ = next(iter(train_loader))
         first_batch = first_batch.to(device)
-        cache = model.init_cache(first_batch, args.nheads)
+        cache = model.init_cache(first_batch[:, :35], args.nheads)
         del first_batch  # Clean up the temporary batch
     else:
         hidden = move_to_device(model.init_hidden(args.batch_size), device)
@@ -218,60 +237,77 @@ def train():
         save_checkpoint(model, optimizer, args.name, epoch, 0)
         logging.info(f"Checkpoint saved before the first batch: {epoch}, batch {0}")
 
-    # Regular sequential iteration through batches of shuffled data
     #for batch, i in enumerate(range(0, train_data.size(0) - 1, args.bptt)):
     for i, (data, targets) in enumerate(train_loader):
         # Get batch
         #data, targets = get_batch(train_data, i, args.bptt)
         data, targets = data.to(device), targets.to(device)
         optimizer.zero_grad()
-
-        # Forward pass
-        if args.classmodel == "CBR_RNN":
-            # Forward pass through CBR_RNN model
-            output, hidden = model(data, cache, args.nheads)
-
-            # Reshape outputs and targets
-            output_flat = output.reshape(-1, output.size(-1))
-            targets_flat = targets.reshape(-1)
-
-            # Calculate loss
-            loss = criterion(output_flat, targets_flat)
-            
-            del output, output_flat, targets_flat
-        else:
-            # Forward pass through standard RNN model
-            data=data.transpose(0,1)
-            hidden = repackage_hidden(hidden)
-            output, hidden = model(data, hidden)
-
-            loss = criterion(output.view(-1, ntokens), targets.view(-1))
-            del output
-
-        if torch.isnan(loss):
-            raise ValueError("NaN loss encountered")
+        #Adding sub-batches of fixed length of 35 to avoid OOM, and ask the model the same memory capacity
+        batch_size = data.size(0) #à recheck ces dimensions
+        seq_length = data.size(1)
+        chunk_size = 35
+        num_complete_chunks = seq_length // chunk_size
+        batch_loss = 0
         
-        # Backward pass
-        try:
-            # Compute gradients
-            loss.backward()
-
-            # Gradient clipping
-            torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
-
-            # Optimizer step
-            optimizer.step()
+        for chunk_idx in range(num_complete_chunks):
+            chunk_start = chunk_idx * chunk_size
+            chunk_end = (chunk_idx + 1) * chunk_size
+            data_chunk = data[:, chunk_start:chunk_end]
+            targets_chunk = targets[:, chunk_start:chunk_end]
             
-        except RuntimeError as e:
-            logging.error(f"Error during backward pass: {str(e)}")
-            logging.error(f"Loss value: {loss.item()}")
-            logging.error(f"Gradients before backward:")
-            for name, param in model.named_parameters():
-                if param.grad is not None:
-                    logging.error(f"{name} - grad shape: {param.grad.shape}")
-            raise e
+            if (targets_chunk == vocab.pad_idx).all():
+                continue
+            
+             # Forward pass on chunk
+            if args.classmodel == "CBR_RNN":
+                output, cache = model(data_chunk, cache, args.nheads)
+                
+                # Reshape outputs and targets
+                output_flat = output.reshape(-1, output.size(-1))
+                targets_flat = targets_chunk.reshape(-1)
+                
+                # Calculate loss
+                chunk_loss = criterion(output_flat, targets_flat)
+                del output, output_flat, targets_flat
+                
+            else:
+                # Standard RNN processing
+                data_chunk = data_chunk.transpose(0, 1)  # seq_len x batch_size
+                hidden = repackage_hidden(hidden)
+                output, hidden = model(data_chunk, hidden)
+                logging.info(f"output shape: {output.shape}, targets_chunk.shape: {targets_chunk.shape}")
+                chunk_loss = criterion(output.view(-1, ntokens), targets_chunk.view(-1))
+                del output
 
-        total_loss += loss.item()
+            if num_complete_chunks > 0:
+                chunk_loss = chunk_loss / num_complete_chunks
+            batch_loss += chunk_loss
+            
+            chunk_loss.backward()
+            
+        if num_complete_chunks > 0:  # Only if we processed at least one chunk
+            if torch.isnan(batch_loss):
+                raise ValueError("NaN loss encountered")
+                
+            try:
+
+                # Gradient clipping
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
+
+                    # Optimizer step
+                    optimizer.step()
+            
+            except RuntimeError as e:
+                logging.error(f"Error during backward pass: {str(e)}")
+                logging.error(f"Loss value: {batch_loss.item()}")
+                logging.error(f"Gradients before backward:")
+                for name, param in model.named_parameters():
+                    if param.grad is not None:
+                        logging.error(f"{name} - grad shape: {param.grad.shape}")
+                raise e
+
+        total_loss += batch_loss.item()
         #del loss
         #clear_memory()
 
@@ -311,8 +347,12 @@ def train():
             )
             total_loss = 0
             start_time = time.time()
+            clear_memory()
 
+###############################################################################
 # Loop over epochs.
+###############################################################################
+
 try:
     if args.epoch_checkpointed:
         k = int(args.epoch_checkpointed)
@@ -341,7 +381,7 @@ try:
         filename = f"epoch{epoch}"
         save_val_loss_data(val_loss_data, subfolder, filename)
         model.train()  # Set back to training mode after evaluation
-
+        clear_memory()
 except KeyboardInterrupt:
     logging.info("-" * 89)
     logging.info("Exiting from training early")

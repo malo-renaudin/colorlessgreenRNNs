@@ -146,27 +146,26 @@ class CBR_RNN(nn.Module):
             value_cache = torch.zeros(bsz, 1, self.nhid).to(self.device) * 0.01
         return hidden, key_cache, value_cache
 
-    def forward(self, observation, initial_cache, nheads):
-        seq_len = observation.size(0)
-        hidden, key_cache, value_cache = initial_cache
 
-        # Check if sequence length exceeds maximum
-        if seq_len > 35:  # bptt value from args
-            logging.warning(f"Sequence length {seq_len} exceeds maximum of 35")
-            observation = observation[:35]
-            seq_len = 35
-
-        # 1. Encode observations
-        emb = self.drop(self.encoder(observation))
-        del observation  # No longer needed after encoding
-        
-        for i in range(seq_len):
-            # 2. Concatenate with previous hidden state
-            combined = torch.cat((emb[i], hidden[-1]), -1)
-            query = self.drop(self.tanh(self.q_norm(self.q(combined))))
-            del combined  # No longer needed after creating query
-            query = query.unsqueeze(1)
-            if nheads == 1:
+    def update_cache(self, key_cache, value_cache, hidden, key_cache_i, value_cache_i, hidden_i, nheads):
+        hidden_i = hidden_i.unsqueeze(0)
+        hidden = torch.cat((hidden, hidden_i), dim=0)
+        if nheads == 1:
+                key_cache_i = key_cache_i.unsqueeze(1).unsqueeze(1)
+                value_cache_i = value_cache_i.unsqueeze(1).unsqueeze(1)
+                key_cache = torch.cat((key_cache, key_cache_i), dim=2)
+                value_cache = torch.cat((value_cache, value_cache_i), dim=2)
+        else:
+            key_cache_i = key_cache_i.unsqueeze(1)
+            value_cache_i = value_cache_i.unsqueeze(1)
+            key_cache = torch.cat((key_cache, key_cache_i), dim=1)
+            value_cache = torch.cat((value_cache, value_cache_i), dim=1)
+            
+        return key_cache, value_cache, hidden
+    
+    
+    def attention_layer(self, query, key_cache, value_cache, nheads):
+        if nheads == 1:
                 query = query.unsqueeze(1)
                 
                 # Ensure all tensors are on the same device
@@ -185,37 +184,55 @@ class CBR_RNN(nn.Module):
                 attn = attn_output.squeeze(1).squeeze(1)
                 del attn_output  # No longer needed after squeezing
                 query = query.squeeze(1).squeeze(1)
-            else:
-                attn_output, _ = self.multihead_attn(
-                    query, key_cache, value_cache, is_causal=False
-                )
-                attn = attn_output.squeeze(1)
-                del attn_output  # No longer needed after squeezing
-                query = query.squeeze(1)
-
-            intermediate_input = torch.cat((emb[i], query, attn, hidden[-1]), -1)
-            del query, attn  # No longer needed after creating intermediate_input
-            intermediate = self.drop(
-                self.tanh(self.int_norm(self.intermediate_h(intermediate_input)))
+        else:
+            attn_output, _ = self.multihead_attn(
+                query, key_cache, value_cache, is_causal=False
             )
-            del intermediate_input  # No longer needed after creating intermediate
-            final_output = self.drop(self.tanh(self.f_norm(self.final_h(intermediate))))
-            del intermediate  # No longer needed after creating final_output
-            key_cache_i, value_cache_i, hidden_i = final_output.split(self.nhid, dim=-1)
-            del final_output  # No longer needed after splitting
+            attn = attn_output.squeeze(1)
+            del attn_output  # No longer needed after squeezing
+            query = query.squeeze(1)
+            
+        return attn, query
+    
+    def intermediate_layers(self, emb, query, attn, hidden):
+        intermediate_input = torch.cat((emb[i], query, attn, hidden[-1]), -1)
+        del query, attn  
+        intermediate = self.drop(
+            self.tanh(self.int_norm(self.intermediate_h(intermediate_input)))
+        )
+        del intermediate_input  
+        final_output = self.drop(self.tanh(self.f_norm(self.final_h(intermediate))))
+        del intermediate  
+        key_cache_i, value_cache_i, hidden_i = final_output.split(self.nhid, dim=-1)
+        del final_output
+        return key_cache_i, value_cache_i, hidden_i
+    
+    def get_query(self, emb, hidden):
+        combined = torch.cat((emb, hidden[-1]), -1)
+        query = self.drop(self.tanh(self.q_norm(self.q(combined))))
+        del combined  # No longer needed after creating query
+        query = query.unsqueeze(1)
+        return query
+    
+    def forward(self, observation, initial_cache, nheads):
+        seq_len = observation.size(0)
+        hidden, key_cache, value_cache = initial_cache
 
-            hidden_i = hidden_i.unsqueeze(0)
-            hidden = torch.cat((hidden, hidden_i), dim=0)
-            if nheads == 1:
-                key_cache_i = key_cache_i.unsqueeze(1).unsqueeze(1)
-                value_cache_i = value_cache_i.unsqueeze(1).unsqueeze(1)
-                key_cache = torch.cat((key_cache, key_cache_i), dim=2)
-                value_cache = torch.cat((value_cache, value_cache_i), dim=2)
-            else:
-                key_cache_i = key_cache_i.unsqueeze(1)
-                value_cache_i = value_cache_i.unsqueeze(1)
-                key_cache = torch.cat((key_cache, key_cache_i), dim=1)
-                value_cache = torch.cat((value_cache, value_cache_i), dim=1)
+        # 1. Encode observations
+        emb = self.drop(self.encoder(observation))
+        del observation  # No longer needed after encoding
+        
+        for i in range(seq_len):
+            # 2. Concatenate with previous hidden state
+            
+            query = self.get_query(emb, hidden)
+            
+            attn, query = self.attention_layer(query, key_cache, value_cache, nheads)
+
+            key_cache_i, value_cache_i, hidden_i = self.intermediate_layers(emb, query, attn, hidden)
+            
+            key_cache, value_cache, hidden = self.update_cache(key_cache, value_cache, hidden, key_cache_i, value_cache_i, hidden_i, nheads)
+            
             del key_cache_i, value_cache_i, hidden_i  # No longer needed after concatenation
 
         decoded = self.decoder(hidden[1:])

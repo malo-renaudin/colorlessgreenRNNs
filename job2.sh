@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=lstm_new_dataloader# Job name
+#SBATCH --job-name=lstm_sub_batching# Job name
 #SBATCH --partition=gpu 
 #SBATCH --export=ALL 
 #SBATCH --cpus-per-task=6        # Number of CPU cores per task (adjust as needed)
@@ -24,7 +24,7 @@ echo "CUDA_DEVICE: $CUDA_VISIBLE_DEVICES"
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 #single head cbr rnn
-#CUDA_LAUNCH_BLOCKING=1 python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name cbr_1h_128_shuffled --classmodel 'CBR_RNN' --batch_size 256 --emsize 128 --nhid 128 --lr 0.001 --cuda  #--checkpoint_path /scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/cbr_1h_512/epoch_15.pt --epoch_checkpointed 15
+#CUDA_LAUNCH_BLOCKING=1 python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name cbr_1h_128_new_dataloader --classmodel 'CBR_RNN' --batch_size 256 --emsize 128 --nhid 128 --optimizer 'Adam' --cuda  #--checkpoint_path /scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/cbr_1h_512/epoch_15.pt --epoch_checkpointed 15
 #multi head cbr rnn
 #CUDA_LAUNCH_BLOCKING=1 python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name cbr_2h_128_shuffled --classmodel 'CBR_RNN' --batch_size 256 --nheads 2 --emsize 128 --nhid 128 --lr 0.001 --cuda
 #3 heads cbr rnn
@@ -32,6 +32,6 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 #cbr rnn growing dimension
 #python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name single_cbr_512 --classmodel 'CBR_RNN' --batch_size 256 --emsize 512 --nhid 512 --lr 0.001 --cuda
 #lstm
-python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name lstm_new_dataloader --classmodel 'RNNModel' --model 'LSTM' --emsize 650 --nhid 650 --batch_size 64 --optimizer 'SGD' --cuda 
+python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name lstm_new_dataloader --classmodel 'RNNModel' --model 'LSTM' --emsize 650 --nhid 650 --batch_size 256 --optimizer 'Adam' --cuda 
 #single cbr adam a retrain avec parametres par défaut pr checkpoint epoch 0 et 1
 #python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name 8_heads_cbr_512 --classmodel 'CBR_RNN' --batch_size 256 --nheads 8 --emsize 512 --nhid 512 --lr 0.001 --cuda
