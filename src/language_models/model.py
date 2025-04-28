@@ -137,13 +137,13 @@ class CBR_RNN(nn.Module):
         else:
             bsz = 1
 
-        hidden = torch.zeros(1, bsz, self.nhid).to(self.device) * 0.01
+        hidden = torch.zeros(1, bsz, self.nhid).to(self.device) 
         if nheads == 1:
-            key_cache = torch.zeros(bsz, 1, 1, self.nhid).to(self.device) * 0.01
-            value_cache = torch.zeros(bsz, 1, 1, self.nhid).to(self.device) * 0.01
+            key_cache = torch.zeros(bsz, 1, 1, self.nhid).to(self.device) 
+            value_cache = torch.zeros(bsz, 1, 1, self.nhid).to(self.device) 
         else:
-            key_cache = torch.zeros(bsz, 1, self.nhid).to(self.device) * 0.01
-            value_cache = torch.zeros(bsz, 1, self.nhid).to(self.device) * 0.01
+            key_cache = torch.zeros(bsz, 1, self.nhid).to(self.device) 
+            value_cache = torch.zeros(bsz, 1, self.nhid).to(self.device) 
         return hidden, key_cache, value_cache
 
 
@@ -194,7 +194,7 @@ class CBR_RNN(nn.Module):
             
         return attn, query
     
-    def intermediate_layers(self, emb, query, attn, hidden):
+    def intermediate_layers(self, i, emb, query, attn, hidden):
         intermediate_input = torch.cat((emb[i], query, attn, hidden[-1]), -1)
         del query, attn  
         intermediate = self.drop(
@@ -225,18 +225,17 @@ class CBR_RNN(nn.Module):
         for i in range(seq_len):
             # 2. Concatenate with previous hidden state
             
-            query = self.get_query(emb, hidden)
+            
+            query = self.get_query(emb[i], hidden)
             
             attn, query = self.attention_layer(query, key_cache, value_cache, nheads)
 
-            key_cache_i, value_cache_i, hidden_i = self.intermediate_layers(emb, query, attn, hidden)
+            key_cache_i, value_cache_i, hidden_i = self.intermediate_layers(i, emb, query, attn, hidden)
             
             key_cache, value_cache, hidden = self.update_cache(key_cache, value_cache, hidden, key_cache_i, value_cache_i, hidden_i, nheads)
             
             del key_cache_i, value_cache_i, hidden_i  # No longer needed after concatenation
 
         decoded = self.decoder(hidden[1:])
-
-        
 
         return decoded, hidden

@@ -15,7 +15,7 @@ import torch.nn as nn
 import os
 import gc
 import psutil
-from dictionary_corpus import Corpus, TextDataset, Vocabulary, word_tokenizer, collate_batch
+from dictionary_corpus import Corpus, TextDataset, Vocabulary, word_tokenizer, collate_batch, tokenize
 import model
 from lm_argparser import lm_parser
 from utils import (
@@ -69,59 +69,23 @@ logging.info("Loading data")
 start = time.time()
 
 # # Old way to load data (from colorlessgreenRNNs)
-# corpus = Corpus(args.data)
-# logging.info("( %.2f )" % (time.time() - start))
-# ntokens = len(corpus.dictionary)
-# logging.info("Vocab size %d", ntokens)
+corpus = Corpus(args.data)
+logging.info("( %.2f )" % (time.time() - start))
+ntokens = len(corpus.dictionary)
+logging.info("Vocab size %d", ntokens)
 
-# # Prepare data with batchify
-# logging.info("Preparing batches...")
-# eval_batch_size = 10
-
-# # Use regular batchify for all data
-# train_data = batchify(corpus.train, args.batch_size, device)
-# val_data = batchify(corpus.valid, eval_batch_size, device)
-# test_data = batchify(corpus.test, eval_batch_size, device)
-
-# logging.info(f"Prepared data - train shape: {train_data.shape}")
-TRAIN_FILE = os.path.join(args.data, "train.txt")
-VALID_FILE = os.path.join(args.data, "valid.txt")
-TEST_FILE = os.path.join(args.data, "test.txt")
-VOCAB_FILE = os.path.join(args.data, "vocab.txt")
-
-vocab = Vocabulary(filepath=VOCAB_FILE, add_special_tokens=True)
-ntokens = len(vocab)
-
-train_dataset = TextDataset(TRAIN_FILE, word_tokenizer, vocab)
-val_dataset = TextDataset(VALID_FILE, word_tokenizer, vocab)
-test_dataset = TextDataset(TEST_FILE, word_tokenizer, vocab)
-clear_memory()
-collate_fn = lambda batch: collate_batch(batch, vocab.pad_idx)
-
-train_loader = DataLoader(train_dataset,
-                                  batch_size=args.batch_size,
-                                  shuffle=True, 
-                                  collate_fn=collate_fn,
-                                  num_workers=6,
-                                  pin_memory=True)
-
+# Prepare data with batchify
+logging.info("Preparing batches...")
 eval_batch_size = 10
 
-val_loader = DataLoader(val_dataset,
-                                  batch_size=eval_batch_size,
-                                  shuffle=False, 
-                                  collate_fn=collate_fn,
-                                  num_workers=6,
-                                  pin_memory=True)
+# Use regular batchify for all data
+#train_data = batchify(corpus.train, args.batch_size, device)
+val_data = batchify(corpus.valid, eval_batch_size, device)
+test_data = batchify(corpus.test, eval_batch_size, device)
 
-test_loader = DataLoader(test_dataset,
-                                  batch_size=eval_batch_size,
-                                  shuffle=False, 
-                                  collate_fn=collate_fn,
-                                  num_workers=6,
-                                  pin_memory=True)
+
                                   
-criterion = nn.CrossEntropyLoss(ignore_index=vocab.pad_idx)
+criterion = nn.CrossEntropyLoss()
 
 ###############################################################################
 # Build the model
@@ -143,15 +107,7 @@ model, optimizer_state_dict = load_model(
     args.checkpoint_path,
 )
 
-# if torch.cuda.is_available() and hasattr(torch, 'compile'):
-#     model = torch.compile(
-#         model,
-#         mode="reduce-overhead",  # Focus on memory efficiency
-#         fullgraph=True,  # Compile the full graph when possible
-#     )
-#     logging.info("Applied torch.compile to the model with memory optimization")
-# else:
-#     logging.info("torch.compile not available, skipping compilation")
+
 
 ###############################################################################
 # Optimizer
@@ -182,8 +138,8 @@ def evaluate(data_source):
         hidden = move_to_device(model.init_hidden(eval_batch_size), device)
 
     with torch.no_grad():
-        #for i in range(0, data_source.size(0) - 1, args.bptt):
-        for i, (data, targets) in enumerate(test_loader):
+        for i in range(0, data_source.size(0) - 1, args.bptt):
+            data, targets = get_batch(data_source, i, args.bptt)
             data, targets = data.to(device), targets.to(device)
             
             if args.classmodel == "CBR_RNN":
@@ -204,7 +160,7 @@ def evaluate(data_source):
                 del output, output_flat
                 hidden = repackage_hidden(hidden)
 
-    return total_loss / (data_source.size(0) - 1)
+    return total_loss / (len(data_source) - 1)
 
 # NEW : create folder for checkpointing
 main_folder = "/scratch2/mrenaudin/colorlessgreenRNNs/val_loss"
@@ -221,130 +177,59 @@ def train():
     model.train()
     total_loss = 0
     start_time = time.time()
-
-    
-    # Initialize cache once per epoch for CBR_RNN
-    if args.classmodel == "CBR_RNN":
-        # Get first batch to determine dimensions
-        first_batch, _ = next(iter(train_loader))
-        first_batch = first_batch.to(device)
-        cache = model.init_cache(first_batch[:, :35], args.nheads)
-        del first_batch  # Clean up the temporary batch
-    else:
+    #For LSTM model : initialize hidden state at the beggining of each epoch as in colorlessgreenRNNs
+    if args.classmodel != "CBR_RNN":
         hidden = move_to_device(model.init_hidden(args.batch_size), device)
     
     if epoch == 1:
         save_checkpoint(model, optimizer, args.name, epoch, 0)
         logging.info(f"Checkpoint saved before the first batch: {epoch}, batch {0}")
 
-    #for batch, i in enumerate(range(0, train_data.size(0) - 1, args.bptt)):
-    for i, (data, targets) in enumerate(train_loader):
+    for batch, i in enumerate(range(0, train_data.size(0) - 1, args.bptt)):
         # Get batch
-        #data, targets = get_batch(train_data, i, args.bptt)
+        data, targets = get_batch(train_data, i, args.bptt)
         data, targets = data.to(device), targets.to(device)
         optimizer.zero_grad()
-        #Adding sub-batches of fixed length of 35 to avoid OOM, and ask the model the same memory capacity
-        batch_size = data.size(0) #à recheck ces dimensions
-        seq_length = data.size(1)
-        chunk_size = 35
-        num_complete_chunks = seq_length // chunk_size
-        batch_loss = 0
         
-        for chunk_idx in range(num_complete_chunks):
-            chunk_start = chunk_idx * chunk_size
-            chunk_end = (chunk_idx + 1) * chunk_size
-            data_chunk = data[:, chunk_start:chunk_end]
-            targets_chunk = targets[:, chunk_start:chunk_end]
+            # Forward pass on chunk
+        if args.classmodel == "CBR_RNN":
+            cache = model.init_cache(data, args.nheads)#for CBR_RNN, initialize cache once per batch as in the original code
+            output,_ = model(data, cache, args.nheads)
             
-            if (targets_chunk == vocab.pad_idx).all():
-                continue
+            # Reshape outputs and targets
+            output_flat = output.reshape(-1, output.size(-1))
+            targets_flat = targets.reshape(-1)
             
-             # Forward pass on chunk
-            if args.classmodel == "CBR_RNN":
-                output, cache = model(data_chunk, cache, args.nheads)
-                
-                # Reshape outputs and targets
-                output_flat = output.reshape(-1, output.size(-1))
-                targets_flat = targets_chunk.reshape(-1)
-                
-                # Calculate loss
-                chunk_loss = criterion(output_flat, targets_flat)
-                del output, output_flat, targets_flat
-                
-            else:
-                # Standard RNN processing
-                data_chunk = data_chunk.transpose(0, 1)  # seq_len x batch_size
-                hidden = repackage_hidden(hidden)
-                output, hidden = model(data_chunk, hidden)
-                logging.info(f"output shape: {output.shape}, targets_chunk.shape: {targets_chunk.shape}")
-                chunk_loss = criterion(output.view(-1, ntokens), targets_chunk.view(-1))
-                del output
-
-            if num_complete_chunks > 0:
-                chunk_loss = chunk_loss / num_complete_chunks
-            batch_loss += chunk_loss
+            # Calculate loss
+            loss = criterion(output_flat, targets_flat)
+            del output, output_flat, targets_flat
             
-            chunk_loss.backward()
-            
-        if num_complete_chunks > 0:  # Only if we processed at least one chunk
-            if torch.isnan(batch_loss):
-                raise ValueError("NaN loss encountered")
-                
-            try:
+        else:
+            # Standard RNN processing
+            hidden = repackage_hidden(hidden)
+            output, hidden = model(data, hidden)
+            loss = criterion(output.view(-1, ntokens), targets)
+            del output
 
-                # Gradient clipping
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
+       
+        loss.backward()
 
-                    # Optimizer step
-                    optimizer.step()
-            
-            except RuntimeError as e:
-                logging.error(f"Error during backward pass: {str(e)}")
-                logging.error(f"Loss value: {batch_loss.item()}")
-                logging.error(f"Gradients before backward:")
-                for name, param in model.named_parameters():
-                    if param.grad is not None:
-                        logging.error(f"{name} - grad shape: {param.grad.shape}")
-                raise e
+        torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
 
-        total_loss += batch_loss.item()
-        #del loss
-        #clear_memory()
+        optimizer.step()   
 
-        # Checkpoint and validation
-        # if args.checkpoint_path and batch % args.batch_check == 0:
-        #     save_checkpoint(model, optimizer, args.name, epoch, batch)
-        #     val_loss = evaluate(val_data)
-        #     filename = f"epoch{epoch}_batch{batch}"
-        #     logging.info(
-        #         "| epoch {:3d} | {:5d}/{:5d} batches | val_loss{:5.2f}".format(
-        #             epoch, batch, len(train_data) // args.bptt, val_loss
-        #         )
-        #     )
-        #     val_loss_data.append(
-        #         {"epoch": epoch, "batch": batch, "val_loss": val_loss}
-        #     )
-        #     save_val_loss_data(val_loss_data, subfolder, filename)
-        #     model.train()  # Set back to training mode after evaluation
-        #     clear_memory()
+        total_loss += loss.item()
+
 
             
         # Logging
-        if (i+1) % args.log_interval == 0 and i > 0:
+        if batch % args.log_interval == 0 and batch > 0:
             cur_loss = total_loss / args.log_interval
             elapsed = time.time() - start_time
-            logging.info(
-                "| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.4f} | ms/batch {:5.2f} | "
-                "loss {:5.2f} | ppl {:8.2f}".format(
-                    epoch,
-                    i+1,
-                    len(train_dataset)//args.batch_size,
-                    lr,
-                    elapsed * 1000 / args.log_interval,
-                    cur_loss,
-                    math.exp(cur_loss),
-                )
-            )
+            logging.info('| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.2f} | ms/batch {:5.2f} | '
+                    'loss {:5.2f} | ppl {:8.2f}'.format(
+                epoch, batch, len(train_data) // args.bptt, lr,
+                elapsed * 1000 / args.log_interval, cur_loss, math.exp(cur_loss)))
             total_loss = 0
             start_time = time.time()
             clear_memory()
@@ -360,10 +245,15 @@ try:
         k = 1
         
     for epoch in range(k, args.epochs + 1):
+        # Shuffle and tokenize the training data
+        corpus.train = tokenize(corpus.dictionary, os.path.join(args.data, 'train.txt'), shuffle=True)
+        train_data = batchify(corpus.train, args.batch_size, device)
+        
         epoch_start_time = time.time()
+        
         train()
 
-        val_loss = evaluate(val_dataset)
+        val_loss = evaluate(val_data)
         logging.info("-" * 89)
         logging.info(
             "| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.2f} | "
@@ -397,7 +287,7 @@ logging.info(f"Time to load best model: {time.time() - load_start_time:.2f}s")
 
 # Run on test data
 test_start_time = time.time()
-test_loss = evaluate(test_dataset)
+test_loss = evaluate(test_data)
 logging.info("=" * 89)
 logging.info(
     "| End of training | test loss {:5.2f} | test ppl {:8.2f}".format(

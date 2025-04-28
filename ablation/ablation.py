@@ -244,6 +244,8 @@ def get_epoch_number(filename):
 
 checkpoint_files.sort(key=get_epoch_number)
 
+def ablate_lstm_unit(model):
+    for name, param in model.named_parameters():
 
 # Function to perform ablation
 def ablate_lstm_unit(model, layer_index, unit_index):

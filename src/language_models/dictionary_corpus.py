@@ -12,6 +12,7 @@ import logging
 import pickle
 from torch.utils.data import Dataset, DataLoader
 from torch.nn.utils.rnn import pad_sequence
+import random
 
 
 
@@ -60,16 +61,16 @@ class Dictionary(object):
 class Corpus(object):
     def __init__(self, path, save_tokenized=True):  # added save_tokenized parameter.
         self.dictionary = Dictionary(path)
-        self.train_path = os.path.join(path, "train.txt")
+        #self.train_path = os.path.join(path, "train.txt")
         self.valid_path = os.path.join(path, "valid.txt")
         self.test_path = os.path.join(path, "test.txt")
 
         if save_tokenized:
-            self.train = self.tokenize_and_save(self.train_path, "train_tokenized.pkl")
+            #self.train = self.tokenize_and_save(self.train_path, "train_tokenized.pkl")
             self.valid = self.tokenize_and_save(self.valid_path, "valid_tokenized.pkl")
             self.test = self.tokenize_and_save(self.test_path, "test_tokenized.pkl")
         else:
-            self.train = self.load_tokenized("train_tokenized.pkl", self.train_path)
+            #self.train = self.load_tokenized("train_tokenized.pkl", self.train_path)
             self.valid = self.load_tokenized("valid_tokenized.pkl", self.valid_path)
             self.test = self.load_tokenized("test_tokenized.pkl", self.test_path)
 
@@ -90,51 +91,40 @@ class Corpus(object):
             return self.tokenize_and_save(original_path, save_path)
 
 
-def tokenize(dictionary, path_or_sentence, is_path=True):
-    """Tokenizes a text file for training or testing to a sequence of indices format
-    We assume that training and test data has <eos> symbols"""
-    # assert os.path.exists(path)
-    # with open(path, 'r', encoding="utf8") as f:
-    #     ntokens = 0
-    #     for line in f:
-    #         words = line.split()
-    #         ntokens += len(words)
-    if is_path:
-        assert os.path.exists(path_or_sentence)
-        with open(path_or_sentence, "r", encoding="utf8") as f:
-            ntokens = 0
-            for line in f:
-                words = line.split()
-                ntokens += len(words)
-        # Tokenize file content
-        with open(path_or_sentence, "r", encoding="utf8") as f:
-            ids = torch.LongTensor(ntokens)
-            token = 0
-            for line in f:
-                words = line.split()
-                for word in words:
-                    if word in dictionary.word2idx:
-                        ids[token] = dictionary.word2idx[word]
-                    else:
-                        ids[token] = dictionary.word2idx["<unk>"]
-                    token += 1
+def tokenize(dictionary, path, shuffle=False):
+    """Tokenizes a text file to a sequence of indices format.
+       Assumes that training and test data have <eos> symbols.
+    """
+    assert os.path.exists(path)
 
-        return ids
-    else:
-        # Tokenize a list of sentences
-        all_tokens = []
-        for sentence in path_or_sentence:  # Process each sentence in the list
-            words = sentence.split()  # Split sentence into words
-            ntokens = len(words)
-            ids = torch.LongTensor(ntokens)
-            for token, word in enumerate(words):
-                if word in dictionary.word2idx:
-                    ids[token] = dictionary.word2idx[word]
-                else:
-                    ids[token] = dictionary.word2idx["<unk>"]
-            all_tokens.append(ids)
+    # Read all lines
+    with open(path, 'r', encoding="utf8") as f:
+        lines = f.readlines()
 
-        return all_tokens
+    if shuffle:
+        random.shuffle(lines)
+
+    # Count total number of tokens
+    ntokens = 0
+    for line in lines:
+        words = line.split()
+        ntokens += len(words)
+
+    # Allocate tensor
+    ids = torch.LongTensor(ntokens)
+
+    # Fill tensor
+    token = 0
+    for line in lines:
+        words = line.split()
+        for word in words:
+            if word in dictionary.word2idx:
+                ids[token] = dictionary.word2idx[word]
+            else:
+                ids[token] = dictionary.word2idx.get("<unk>", 0)
+            token += 1
+
+    return ids
 
 
 
@@ -177,8 +167,7 @@ class Vocabulary:
             print(f"Vocabulary loaded. Size: {len(self)}")
         except FileNotFoundError:
             print(f"Error: Vocabulary file not found at {filepath}")
-            # Optionally, you could build vocab from training data here if needed
-            raise # Re-raise the exception or handle differently
+            raise
 
     def __len__(self):
         return len(self.idx2word)
@@ -214,15 +203,14 @@ class TextDataset(Dataset):
             with open(filepath, 'r', encoding='utf-8') as f:
                 for line in f:
                     sentence = line.strip()
-                    if sentence: # Skip empty lines
+                    if sentence: 
                         tokens = self.tokenizer(sentence)
                         indices = [self.vocab.get_index(token) for token in tokens]
-                        # Convert to tensor for easier handling later
                         self.sentences_as_indices.append(torch.tensor(indices, dtype=torch.long))
             print(f"Loaded {len(self.sentences_as_indices)} sentences.")
         except FileNotFoundError:
             print(f"Error: Data file not found at {filepath}")
-            raise # Re-raise the exception
+            raise 
 
     def __len__(self):
         return len(self.sentences_as_indices)
@@ -252,9 +240,6 @@ def collate_batch(batch, pad_idx):
     input_sequences = pad_sequence(batch, batch_first=True, padding_value=pad_idx)
     batch_size, max_seq_len = input_sequences.shape
 
-    # # Create the padding mask for the inputs
-    # # True where input is NOT pad_idx, False where it is pad_idx
-    # input_mask = (input_sequences != pad_idx)
 
     # Create the target sequences by shifting the inputs left
     # Target for input token at index `t` is the token at `t+1`
@@ -269,4 +254,4 @@ def collate_batch(batch, pad_idx):
     # Now target_sequences has the same shape as input_sequences
     target_sequences = torch.cat([target_sequences_shifted, pad_tensor], dim=1)
 
-    return input_sequences, target_sequences#, input_mask
+    return input_sequences, target_sequences
