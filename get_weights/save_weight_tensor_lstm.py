@@ -3,8 +3,9 @@ import os
 from pathlib import Path
 
 # Path where checkpoints are stored
-checkpoint_dir_str = "/scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/lstm_sgd_lr10_no_clip"
-checkpoint_files = sorted(os.listdir(checkpoint_dir_str))  # Ensure chronological order
+checkpoint_dir_str = "/scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/lstm_adam_full_check"
+checkpoint_files = [f'epoch_1_batch_{i}.pt' for i in range(0, 101, 1)] + [f'epoch_1_batch_{i}.pt'for i in range(200, 9300, 100)] + [f'epoch_{i}.pt' for i in range(2, 5, 1)]
+
 checkpoint_dir = Path(checkpoint_dir_str)
 weights_dir = checkpoint_dir / "weights" # Define the weights directory
 
@@ -47,6 +48,7 @@ for item_name in checkpoint_files:
     # Check if the item is a file (and not the 'weights' directory)
     if item_path.is_file():
         try:
+            print(item_path)
             checkpoint = torch.load(item_path, map_location="cpu")
 
             # Extract model weights from the checkpoint

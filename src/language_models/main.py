@@ -79,7 +79,7 @@ logging.info("Preparing batches...")
 eval_batch_size = 10
 
 # Use regular batchify for all data
-#train_data = batchify(corpus.train, args.batch_size, device)
+train_data = batchify(corpus.train, args.batch_size, device)
 val_data = batchify(corpus.valid, eval_batch_size, device)
 test_data = batchify(corpus.test, eval_batch_size, device)
 
@@ -220,7 +220,10 @@ def train():
 
         total_loss += loss.item()
 
-
+        if epoch == 1 and batch <= 100 :  
+            save_checkpoint(model, optimizer, args.name, epoch, batch)
+        if epoch == 1 and batch > 100 and  batch % 100 == 0 :
+            save_checkpoint(model, optimizer, args.name, epoch, batch)
             
         # Logging
         if batch % args.log_interval == 0 and batch > 0:
@@ -246,8 +249,8 @@ try:
         
     for epoch in range(k, args.epochs + 1):
         # Shuffle and tokenize the training data
-        corpus.train = tokenize(corpus.dictionary, os.path.join(args.data, 'train.txt'), shuffle=True)
-        train_data = batchify(corpus.train, args.batch_size, device)
+        # corpus.train = tokenize(corpus.dictionary, os.path.join(args.data, 'train.txt'), shuffle=True)
+        # train_data = batchify(corpus.train, args.batch_size, device)
         
         epoch_start_time = time.time()
         

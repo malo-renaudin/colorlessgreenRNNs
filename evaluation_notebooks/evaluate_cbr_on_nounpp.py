@@ -64,153 +64,171 @@ class CBR_RNN(nn.Module):
     # goal here is to reuse CBR_RNN but with scaled dot product attention for more efficient computations.
     # Also I got rid of options such as loading pretrained embeddings, and ablating attention to simplify the code.
     # In the future if those options are needed, they can still be copy pasted from William's code as the structure hasn't changed
-    def __init__(self, ntoken, ninp, nhid, device, nheads, dropout=0.5):
+    def __init__(self, ntoken, ninp, nhid, nheads, dropout=0.5, device=None):
         super().__init__()
         # same layers as Timkey
         self.device = device
+        self.nheads = nheads
         self.tanh = nn.Tanh()
         self.drop = nn.Dropout(dropout)
         self.score_attn = nn.Softmax(dim=-1)
         self.encoder = nn.Embedding(ntoken, ninp)
         self.q = nn.Linear(ninp + nhid, nhid)
         self.intermediate_h = nn.Linear(nhid * 4, nhid * 4)
-        self.decoder = nn.Linear(nhid, ntoken + 1)
+        self.decoder = nn.Linear(nhid, ntoken)
         self.q_norm = torch.nn.LayerNorm(nhid)
         self.int_norm = torch.nn.LayerNorm(nhid * 4)
         self.f_norm = torch.nn.LayerNorm(nhid * 3)
         self.nhid = nhid
-        self.attn_div_factor = np.sqrt(nhid)
         self.final_h = nn.Linear(nhid * 4, nhid * 3)
-        self.nheads = nheads
+        self.multihead_attn = nn.MultiheadAttention(
+            embed_dim=nhid, num_heads=nheads, batch_first=True
+        )
 
-        # for multihead attention
-        if self.nheads > 1:
-            self.multihead_attn = nn.MultiheadAttention(
-                embed_dim=nhid, num_heads=nheads, batch_first=True
-            )
+        self.init_weights()
 
-    # same weight initialization as Timkey
-    def init_weights(self, freeze_embedding, aux_objective):
-        """Initialize encoder and decoder weights"""
-        initrange = 0.1
-        if not freeze_embedding:
-            self.encoder.weight.data.uniform_(-initrange, initrange)
-        self.decoder.bias.data.fill_(0)
-        self.decoder.weight.data.uniform_(-initrange, initrange)
-        if aux_objective:
-            self.aux_decoder.bias.data.fill_(0)
-            self.aux_decoder.weight.data.uniform_(-initrange, initrange)
+    def init_weights(self):
+        """Initialize model weights for better training dynamics"""
+        # General initialization
+        for name, param in self.named_parameters():
+            if "weight" in name:
+                if "norm" in name:
+                    nn.init.ones_(param)
+                elif "encoder" in name:
+                    nn.init.normal_(param, mean=0, std=0.01)
+                elif "decoder" in name:
+                    nn.init.normal_(param, mean=0, std=0.01)
+                else:
+                    # Standard He initialization for processing layers
+                    nn.init.kaiming_normal_(param, mode="fan_in", nonlinearity="tanh")
+            elif "bias" in name:
+                nn.init.zeros_(param)
 
-    # def init_hidden(self, bsz):
-    #     """Initialize a fresh hidden state"""
-    #     weight = next(self.parameters()).data
-
-    #     return torch.tensor(weight.new(bsz, self.nhid).zero_())
-
-    def init_cache(self, observation):
+    def init_cache(self, observation, nheads):
+        """Initialize hidden state and attention caches with better initialization strategy"""
         if len(observation.size()) > 1:
             bsz = observation.size(dim=-1)
         else:
             bsz = 1
-        seq_len = observation.size(dim=0)
 
-        return (
-            torch.zeros(1, bsz, self.nhid).to(self.device),
-            torch.zeros(1, bsz, self.nhid).to(self.device),
-            torch.zeros(1, bsz, self.nhid).to(self.device),
+        hidden = torch.zeros(1, bsz, self.nhid).to(self.device) 
+        if nheads == 1:
+            key_cache = torch.zeros(bsz, 1, 1, self.nhid).to(self.device) 
+            value_cache = torch.zeros(bsz, 1, 1, self.nhid).to(self.device) 
+        else:
+            key_cache = torch.zeros(bsz, 1, self.nhid).to(self.device) 
+            value_cache = torch.zeros(bsz, 1, self.nhid).to(self.device) 
+        return hidden, key_cache, value_cache
+
+
+    def update_cache(self, key_cache, value_cache, hidden, key_cache_i, value_cache_i, hidden_i, nheads):
+        hidden_i = hidden_i.unsqueeze(0)
+        hidden = torch.cat((hidden, hidden_i), dim=0)
+        if nheads == 1:
+                key_cache_i = key_cache_i.unsqueeze(1).unsqueeze(1)
+                value_cache_i = value_cache_i.unsqueeze(1).unsqueeze(1)
+                key_cache = torch.cat((key_cache, key_cache_i), dim=2)
+                value_cache = torch.cat((value_cache, value_cache_i), dim=2)
+        else:
+            key_cache_i = key_cache_i.unsqueeze(1)
+            value_cache_i = value_cache_i.unsqueeze(1)
+            key_cache = torch.cat((key_cache, key_cache_i), dim=1)
+            value_cache = torch.cat((value_cache, value_cache_i), dim=1)
+            
+        return key_cache, value_cache, hidden
+    
+    
+    def attention_layer(self, query, key_cache, value_cache, nheads):
+        if nheads == 1:
+                query = query.unsqueeze(1)
+                
+                # Ensure all tensors are on the same device
+                if query.device != key_cache.device:
+                    key_cache = key_cache.to(query.device)
+                if query.device != value_cache.device:
+                    value_cache = value_cache.to(query.device)
+                    
+                try:
+                    attn_output = scaled_dot_product_attention(
+                        query, key_cache, value_cache, is_causal=False
+                    )
+                except Exception as e:
+                    raise
+                attn = attn_output.squeeze(1).squeeze(1)
+                del attn_output  # No longer needed after squeezing
+                query = query.squeeze(1).squeeze(1)
+        else:
+            attn_output, _ = self.multihead_attn(
+                query, key_cache, value_cache, is_causal=False
+            )
+            attn = attn_output.squeeze(1)
+            del attn_output  # No longer needed after squeezing
+            query = query.squeeze(1)
+            
+        return attn, query
+    
+    def intermediate_layers(self, i, emb, query, attn, hidden):
+        intermediate_input = torch.cat((emb[i], query, attn, hidden[-1]), -1)
+        del query, attn  
+        intermediate = self.drop(
+            self.tanh(self.int_norm(self.intermediate_h(intermediate_input)))
         )
+        del intermediate_input  
+        final_output = self.drop(self.tanh(self.f_norm(self.final_h(intermediate))))
+        del intermediate  
+        key_cache_i, value_cache_i, hidden_i = final_output.split(self.nhid, dim=-1)
+        del final_output
+        return key_cache_i, value_cache_i, hidden_i
+    
+    def get_query(self, emb, hidden):
 
-    def forward(self, observation, initial_cache, nheads):
-        # Get dimensions
-        seq_len = observation.size(0)  # if len(observation.size()) > 1 else 1
-
-        observation = observation.to(self.device)
-        # Unpack initial cache
-        hidden, key_cache, value_cache = (
-            initial_cache  # hidden is initialized as the query and updated at each time step
-        )
-
+        combined = torch.cat((emb, hidden[-1]), -1)
+        query = self.drop(self.tanh(self.q_norm(self.q(combined))))
+        del combined  # No longer needed after creating query
+        query = query.unsqueeze(1)
+        return query
+    
+    def forward(self, observation, initial_cache, nheads,replace = None):
+        seq_len = observation.size(0)
+        hidden, key_cache, value_cache = initial_cache
+      
         # 1. Encode observations
         emb = self.drop(self.encoder(observation))
-        # Process sequence : is there another more efficient way to compute causal attention than looping ?
-        for i in range(
-            seq_len
-        ):  # need to keep sequential processing as the core structure is recurrent (each new word needs the hidden state obtained after prediction of the last word)
+        del observation  # No longer needed after encoding
+        
+        for i in range(seq_len):
             # 2. Concatenate with previous hidden state
-            query = self.drop(
-                self.tanh(self.q_norm(self.q(torch.cat((emb[i], hidden[i]), -1))))
-            )  # b * d
-            query = query.unsqueeze(1)
-            if nheads == 1:
-                attn_output = scaled_dot_product_attention(
-                    query,
-                    key_cache.transpose(0, 1),
-                    value_cache.transpose(
-                        0, 1
-                    ),  # batch dimension needs to be the first one, hence the transpose (and the unsuqeeze on the query), second dim is seq len
-                    is_causal=True,
-                )
-                attn = attn_output.squeeze(1)
+            
+            
+            
+            query = self.get_query(emb[i], hidden)
+            
+            attn, query = self.attention_layer(query, key_cache, value_cache, nheads)
+            
+            if replace == 'hidden' :
+                hidden_replaced = torch.zeros_like(hidden)
+                key_cache_i, value_cache_i, hidden_i = self.intermediate_layers(i, emb, query, attn, hidden_replaced)
+            elif replace == 'attention' :
+                attention_replaced = torch.zeros_like(attn)
+                key_cache_i, value_cache_i, hidden_i = self.intermediate_layers(i, emb, query, attention_replaced, hidden)
+            elif replace == 'query' :
+                query_replaced = torch.zeros_like(query)
+                key_cache_i, value_cache_i, hidden_i = self.intermediate_layers(i, emb, query_replaced, attn, hidden)
+            elif replace == 'emb' :
+                emb_replaced = torch.zeros_like(emb[i])
+                key_cache_i, value_cache_i, hidden_i = self.intermediate_layers(i, emb_replaced, query, attn, hidden)
+            else :
+                key_cache_i, value_cache_i, hidden_i = self.intermediate_layers(i, emb, query, attn, hidden)
+                
+            key_cache, value_cache, hidden = self.update_cache(key_cache, value_cache, hidden, key_cache_i, value_cache_i, hidden_i, nheads)
 
-                intermediate = self.drop(
-                    self.tanh(
-                        self.int_norm(
-                            self.intermediate_h(
-                                torch.cat(
-                                    (emb[i], query.squeeze(1), attn, hidden[i]), -1
-                                )
-                            )
-                        )
-                    )
-                )
-                key_cache_i, value_cache_i, hidden_i = self.drop(
-                    self.tanh(self.f_norm(self.final_h(intermediate)))
-                ).split(self.nhid, dim=-1)
+            del key_cache_i, value_cache_i, hidden_i  # No longer needed after concatenation
 
-                hidden = torch.cat((hidden, hidden_i.unsqueeze(0)), dim=0)
-                key_cache = torch.cat((key_cache, key_cache_i.unsqueeze(0)), dim=0)
-
-                value_cache = torch.cat(
-                    (value_cache, value_cache_i.unsqueeze(0)), dim=0
-                )
-            else:
-                attn_output = self.multihead_attn(
-                    query, key_cache.transpose(0, 1), value_cache.transpose(0, 1)
-                )
-                # outputs attn output and attn output weights
-                attn = attn_output[0]  # .squeeze(1)
-                intermediate = self.drop(
-                    self.tanh(
-                        self.int_norm(
-                            self.intermediate_h(
-                                torch.cat(
-                                    (
-                                        emb[i].unsqueeze(0),
-                                        query.transpose(0, 1),
-                                        attn.transpose(0, 1),
-                                        hidden[i].unsqueeze(0),
-                                    ),
-                                    -1,
-                                )
-                            )
-                        )
-                    )
-                )
-
-                intermediate_2 = self.drop(
-                    self.tanh(self.f_norm(self.final_h(intermediate)))
-                )
-                key_cache_i, value_cache_i, hidden_i = intermediate_2.split(
-                    self.nhid, dim=-1
-                )
-                hidden = torch.cat((hidden, hidden_i), dim=0)
-                key_cache = torch.cat((key_cache, key_cache_i), dim=0)
-                value_cache = torch.cat((value_cache, value_cache_i), dim=0)
-
+        cache = (hidden, key_cache, value_cache)
         decoded = self.decoder(hidden[1:])
-        cache = [hidden, key_cache, value_cache]
 
-        return decoded, hidden, cache
+        return decoded, cache
+
 
 
 class NounPPDataset(Dataset):
@@ -312,9 +330,9 @@ def eval(model, test_dataloader):
             batch_size = sentence.size(0)
 
             sent = sentence[:, :5].transpose(0, 1)
-            cache = model.init_cache(sent)  # regarder si on peut mettre du priming
+            cache = model.init_cache(sent,1)  # regarder si on peut mettre du priming
             # for i in range(sent.shape[1]):
-            out, hidden, cache = model(sent, cache, 1)
+            out, cache = model(sent, cache, 1, replace=None)
             log_probs = torch.nn.functional.log_softmax(
                 out, dim=-1
             )  # s(out.squeeze(0))
@@ -381,7 +399,7 @@ for checkpoint_file in tqdm.tqdm(checkpoint_files, desc="Evaluating checkpoints"
     )
     with open(checkpoint_path, "rb") as f:
         state_dict = torch.load(f, map_location="cuda" if device == "cuda" else "cpu")
-        model.load_state_dict(state_dict)
+        model.load_state_dict(state_dict['model_state_dict'])
     model.to(device)
 
     acc = eval(model, test_dataloader)
@@ -399,3 +417,4 @@ print(df)
 # python /scratch2/mrenaudin/colorlessgreenRNNs/evaluation_notebooks/evaluate_cbr_on_nounpp.py --emsize 128 --nhid 128 --nheads 2 --checkpoint_dir '/scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/multihead_cbr' --output_name '2_heads_cbr_128'
 # to run with 8 heads
 # python /scratch2/mrenaudin/colorlessgreenRNNs/evaluation_notebooks/evaluate_cbr_on_nounpp.py --emsize 128 --nhid 128 --nheads 8 --checkpoint_dir '/scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/8_heads_cbr' --output_name '8_heads_cbr_128'
+#python /scratch2/mrenaudin/colorlessgreenRNNs/evaluation_notebooks/evaluate_cbr_on_nounpp.py --emsize 512 --nhid 512 --nheads 8 --checkpoint_dir '/scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/cbr8h512_shuffling' --output_name 'cbr8h512shuffling'

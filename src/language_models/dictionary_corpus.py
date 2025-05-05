@@ -61,16 +61,16 @@ class Dictionary(object):
 class Corpus(object):
     def __init__(self, path, save_tokenized=True):  # added save_tokenized parameter.
         self.dictionary = Dictionary(path)
-        #self.train_path = os.path.join(path, "train.txt")
+        self.train_path = os.path.join(path, "train.txt")
         self.valid_path = os.path.join(path, "valid.txt")
         self.test_path = os.path.join(path, "test.txt")
 
         if save_tokenized:
-            #self.train = self.tokenize_and_save(self.train_path, "train_tokenized.pkl")
+            self.train = self.tokenize_and_save(self.train_path, "train_tokenized.pkl")
             self.valid = self.tokenize_and_save(self.valid_path, "valid_tokenized.pkl")
             self.test = self.tokenize_and_save(self.test_path, "test_tokenized.pkl")
         else:
-            #self.train = self.load_tokenized("train_tokenized.pkl", self.train_path)
+            self.train = self.load_tokenized("train_tokenized.pkl", self.train_path)
             self.valid = self.load_tokenized("valid_tokenized.pkl", self.valid_path)
             self.test = self.load_tokenized("test_tokenized.pkl", self.test_path)
 
