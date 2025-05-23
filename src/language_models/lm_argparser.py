@@ -13,7 +13,7 @@ lm_parser = argparse.ArgumentParser(add_help=False)
 lm_parser.add_argument("--data", type=str, help="location of the data corpus")
 lm_parser.add_argument("--name", type=str, help="experiment name")
 lm_parser.add_argument(
-    "--classmodel", type=str, help="model class (RNNModel, CBR_RNN, SRNN_Softmax)"
+    "--classmodel", type=str, help="model class (RNNModel, CBR_RNN, Stack_LSTM)"
 )
 lm_parser.add_argument(
     "--model",
@@ -97,6 +97,7 @@ lm_parser.add_argument(
     default=None,
     help="path to the vocabulary file",
 )
+
 lm_parser.add_argument(
     "--optimizer",
     type=str,
@@ -104,3 +105,33 @@ lm_parser.add_argument(
     help="optimizer to use (SGD, Adam)",
 )
 
+lm_parser.add_argument(
+    "--gumbel_softmax",
+    action="store_true",
+    help="Enable gumbel softmax woth tau scheduler"
+)
+
+lm_parser.add_argument(
+    "--memory_size",
+    type=int,
+    default=104,
+    help='size of the stack in the stack lstm'
+)
+
+lm_parser.add_argument(
+    '--memory_dim',
+    type=int,
+    default=5,
+    help="dim of stack elements"
+)
+lm_parser.add_argument(
+    '--cell_sparsity_lambda',
+    type = float,
+    default = 0,
+    help = 'lambda for the regularization on cell sparsity'
+)
+lm_parser.add_argument(
+    "--neuron_reg",
+    action = 'store_true',
+    help ='enable lt st neuron regularization in an RNN'
+)

@@ -12,6 +12,9 @@ import logging
 import pandas as pd
 import psutil
 import gc
+import numpy as np 
+import random
+
 def repackage_hidden(h):
     """Detaches hidden states from their history."""
     if isinstance(h, torch.Tensor):
@@ -114,6 +117,8 @@ def load_model(
     nlayers,
     tied,
     checkpoint_path,
+    memory_size,
+    memory_dim
 ):
     import model as m
 
@@ -122,6 +127,10 @@ def load_model(
 
     elif classmodel == "CBR_RNN":
         model = m.CBR_RNN(ntokens, emsize, nhid, nheads, dropout, device)
+        
+    elif classmodel == 'Stack_LSTM':
+        model = m.Stack_LSTM(ntokens, emsize, nhid, device, nlayers, memory_size, memory_dim)
+        
 
     optimizer_state_dict = None
     if checkpoint_path:
@@ -162,3 +171,40 @@ def clear_memory():
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
+class TemperatureScheduler:
+    def __init__(self, start_temp=1.0, min_temp=0.1, total_steps = 40):
+        self.temperature = start_temp
+        self.min_temp = min_temp
+        self.step_count = 0
+        self.decay_rate = (min_temp / start_temp) ** (1 / total_steps)
+        self.temperature = start_temp
+
+    def step(self):
+        self.temperature = max(self.min_temp, self.temperature * self.decay_rate)
+        self.step_count += 1
+        return self.temperature
+
+    def get_temperature(self):
+        return self.temperature
+    
+def pick_lt_st_indices(num_layers, hidden_size_per_layer, n_lt, n_st, seed=None):
+    total_neurons = num_layers * hidden_size_per_layer
+    if n_lt + n_st > total_neurons:
+        raise ValueError(f"Cannot pick {n_lt} long-term and {n_st} short-term neurons from {total_neurons} total neurons.")
+
+    if seed is not None:
+        random.seed(seed)
+
+    # Generate all (layer_idx, neuron_idx) pairs
+    all_indices = [
+        (layer, neuron)
+        for layer in range(num_layers)
+        for neuron in range(hidden_size_per_layer)
+    ]
+
+    # Sample
+    lt_indices = random.sample(all_indices, n_lt)
+    remaining_indices = list(set(all_indices) - set(lt_indices))
+    st_indices = random.sample(remaining_indices, n_st)
+
+    return lt_indices, st_indices

@@ -418,3 +418,6 @@ print(df)
 # to run with 8 heads
 # python /scratch2/mrenaudin/colorlessgreenRNNs/evaluation_notebooks/evaluate_cbr_on_nounpp.py --emsize 128 --nhid 128 --nheads 8 --checkpoint_dir '/scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/8_heads_cbr' --output_name '8_heads_cbr_128'
 #python /scratch2/mrenaudin/colorlessgreenRNNs/evaluation_notebooks/evaluate_cbr_on_nounpp.py --emsize 512 --nhid 512 --nheads 8 --checkpoint_dir '/scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/cbr8h512_shuffling' --output_name 'cbr8h512shuffling'
+
+#python /scratch2/mrenaudin/colorlessgreenRNNs/evaluation_notebooks/evaluate_cbr_on_nounpp.py --emsize 128 --nhid 128 --nheads 1 --checkpoint_dir '/scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/cbr_1h_128_gumbel_softmax' --output_name '1head_128_gumbel_softmax'
+# python /scratch2/mrenaudin/colorlessgreenRNNs/evaluation_notebooks/evaluate_cbr_on_nounpp.py --emsize 128 --nhid 128 --nheads 8 --checkpoint_dir '/scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/cbr8h128_shuffling' --output_name '8h_cbr_128_shuffling'

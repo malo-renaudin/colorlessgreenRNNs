@@ -29,7 +29,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 data_path = "/scratch2/mrenaudin/colorlessgreenRNNs/english_data"
 dictionary = Dictionary(data_path)
 nounpp = "/scratch2/mrenaudin/colorlessgreenRNNs/NounPP/Stimuli/nounpp.txt"
-checkpoint_dir = "/scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/lstm_sgd_lr10"
+checkpoint_dir = "/scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/lstm_adam_full_check"
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -53,11 +53,7 @@ init_sentence = " ".join(
 test_dataset = NounPPDataset(nounpp, dictionary)
 test_dataloader = DataLoader(test_dataset, batch_size=batch_size, collate_fn=collate_fn)
 
-checkpoint_files = [
-    f
-    for f in os.listdir(checkpoint_dir)
-    if f.startswith("epoch_") and f.endswith(".pt")
-]
+checkpoint_files = [f'epoch_1_batch_{i}.pt' for i in range(0, 101, 1)] + [f'epoch_1_batch_{i}.pt'for i in range(200, 9300, 100)]+[f'epoch_{i}.pt' for i in range(1, 41, 1)]
 
 results = {}
 

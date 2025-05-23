@@ -24,8 +24,14 @@ import re
 
 # Parse arguments
 parser = argparse.ArgumentParser(description="Evaluation of LSTM on NounPP")
+parser.add_argument(
+    "--classmodel", type=str, help="model class (RNNModel, CBR_RNN, Stack_LSTM)"
+)
+parser.add_argument("--model", type=str, help="model (LSTM, GRU, RNN_TANH, RNN_RELU)")
 parser.add_argument("--emsize", type=int, help="size of word embeddings")
 parser.add_argument("--nhid", type=int, help="size of hidden state")
+parser.add_argument("--memory_dim", type=int, help="size of memory dimension")
+parser.add_argument("--memory_size", type=int, help="size of memory size")
 parser.add_argument(
     "--checkpoint_dir",
     type=str,
@@ -154,20 +160,20 @@ init_sentence = " ".join(
 )
 
 
-def feed_input(model, hidden, w):
+def feed_input(model, hidden, w, stack):
     inp = torch.autograd.Variable(
         torch.LongTensor([[dictionary.word2idx[w]]]).to(device)
     )
-    out, hidden = model(inp, hidden)
-    return out, hidden
+    out, hidden, stack = model(inp, hidden, stack)
+    return out, hidden, stack
 
 
-def feed_sentence(model, h, sentence):
+def feed_sentence(model, h, sentence, stack):
     outs = []
     for w in sentence:
-        out, h = feed_input(model, h, w)
+        out, h, stack = feed_input(model, h, w, stack)
         outs.append(torch.nn.functional.log_softmax(out[0]).unsqueeze(0))
-    return outs, h
+    return outs, h , stack
 
 
 # evaluation function
@@ -180,8 +186,8 @@ def eval(model, test_dataloader, init_sentence):
     model.eval()
 
     hidden = model.init_hidden(1)
-    init_out, init_h = feed_sentence(model, hidden, init_sentence.split(" "))
-
+    stack = model.init_stack(1)
+    init_out, init_h, init_stack = feed_sentence(model, hidden, init_sentence.split(" "), stack)
     with torch.no_grad():
         for batch in test_dataloader:
             out = None
@@ -195,10 +201,14 @@ def eval(model, test_dataloader, init_sentence):
                 init_h[0].expand(-1, batch_size, -1).contiguous(),
                 init_h[1].expand(-1, batch_size, -1).contiguous(),
             )
+            stack = (
+                init_stack.expand(batch_size, -1, -1).contiguous(),
+            )
+            stack=stack[0]
             for w in range(sentence.shape[1] - 1):
 
                 word = torch.autograd.Variable(sentence[:, w].unsqueeze(0))
-                out, hidden = model(word, hidden)
+                out, hidden, stack = model(word, hidden, stack)
 
             log_probs = torch.nn.functional.log_softmax(out, dim=-1)
             correct_log_probs = log_probs[0, torch.arange(batch_size), correct]
@@ -247,16 +257,54 @@ def get_epoch_number(filename):
 
 checkpoint_files.sort(key=get_epoch_number)
 
+def load_model(
+    classmodel,
+    model,
+    ntokens,
+    emsize,
+    nhid,
+    nheads,
+    dropout,
+    device,
+    nlayers,
+    tied,
+    checkpoint_path,
+    memory_size,
+    memory_dim
+):
+    import language_models.model as m
+    if classmodel == "RNNModel":
+        model = m.RNNModel(model, ntokens, emsize, nhid, nlayers, dropout, tied)
+
+    elif classmodel == "CBR_RNN":
+        model = m.CBR_RNN(ntokens, emsize, nhid, nheads, dropout, device)
+        
+    elif classmodel == 'Stack_LSTM':
+        model = m.Stack_LSTM(ntokens, emsize, nhid, device, nlayers, memory_size, memory_dim)
+        
+
+    optimizer_state_dict = None
+    if checkpoint_path:
+        with open(checkpoint_path, "rb") as f:
+            state_dict = torch.load(
+                f, map_location="cuda" if device == "cuda" else "cpu"
+            )
+            model.load_state_dict(state_dict["model_state_dict"])
+            optimizer_state_dict = state_dict["optimizer_state_dict"]
+
+    model = model.to(device)
+    return model, optimizer_state_dict
+
 # Iterate through the sorted checkpoint files
 for checkpoint_file in tqdm.tqdm(checkpoint_files, desc="Evaluating checkpoints"):
     checkpoint_path = os.path.join(checkpoint_dir, checkpoint_file)
-    model = lstm("LSTM", len(dictionary), args.emsize, args.nhid, 2, 0.2, False).to(
-        device
-    )
-    with open(checkpoint_path, "rb") as f:
-        state_dict = torch.load(f, map_location=device)
-        model.load_state_dict(state_dict)
-
+    # model = lstm("LSTM", len(dictionary), args.emsize, args.nhid, 2, 0.2, False).to(
+    #     device
+    # )
+    model, optim = load_model(args.classmodel, args.model, len(dictionary), args.emsize, args.nhid, 1, 0, device, 2, False, checkpoint_path, args.memory_size, args.memory_dim)
+    # with open(checkpoint_path, "rb") as f:
+    #     state_dict = torch.load(f, map_location=device)
+    #     model.load_state_dict(state_dict['model_state_dict'])
     acc = eval(model, test_dataloader, init_sentence)
     epoch_number = get_epoch_number(checkpoint_file)
     accuracies_list.append({"epoch": epoch_number, **acc})
@@ -266,4 +314,5 @@ print(f"Saving results to: {output_path}")
 df.to_csv(output_path, index=False)
 print(df)
 # to run on cpu : directly copy paste this in terminal
-# python /scratch2/mrenaudin/colorlessgreenRNNs/evaluation_notebooks/evaluate_lstm_on_nounpp.py --emsize 650 --nhid 650 --checkpoint_dir '/scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/lstm_adam' --output_name 'lstm_adam'
+#
+#python /scratch2/mrenaudin/colorlessgreenRNNs/evaluation_notebooks/evaluate_lstm_on_nounpp.py --classmodel 'Stack_LSTM' --model 'LSTM' --emsize 256 --nhid 256 --memory_dim 650 --memory_size 64 --checkpoint_dir '/scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/stack_lstm' --output_name 'stack_lstm'
