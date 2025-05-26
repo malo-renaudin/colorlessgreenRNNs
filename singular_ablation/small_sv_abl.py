@@ -109,7 +109,7 @@ def evaluate_on_n_ablations(checkpoint_path, ntokens, layers, weight_type, gates
         ablation[f'layer_{layer}'] = {}
         for gate in gates:
             
-            ablation[f'layer_{layer}'][gate] = []
+            ablation[f'layer_{layer}'][gate] = {}
             
             model = lstm('LSTM', ntokens, 650, 650, 2, 0, False).to(device)
             with open(checkpoint_path, "rb") as f:
@@ -121,13 +121,14 @@ def evaluate_on_n_ablations(checkpoint_path, ntokens, layers, weight_type, gates
             ppl_original = evaluate(model, val_data, ntokens)
             
             ablation[f'layer_{layer}'][gate]['original']=ppl_original
+            ablation[f'layer_{layer}'][gate]['ablations'] = []
             
             for i in tqdm(range(n), desc=f"Layer {layer}, Gate {gate}"):
                 check = modify_checkpoint_weight(checkpoint_path, layer, weight_type, gate, i+1, device)
                 model = lstm('LSTM', ntokens, 650, 650, 2, 0, False).to(device)
                 model.load_state_dict(check['model_state_dict'])
                 ppl = evaluate(model, val_data, ntokens)
-                ablation[f'layer_{layer}'][gate].append(ppl)
+                ablation[f'layer_{layer}'][gate]['ablations'].append(ppl)
                 
     return ablation   
 
