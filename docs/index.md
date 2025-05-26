@@ -4,5 +4,6 @@ Here you will find plots and explanations.
 
 ## Plots
 
-- [Breakthrough Plot](plots/breakthroughs_nounpp.html)
-- Other plots here...
+Here is the interactive Plotly plot directly embedded:
+
+<iframe src="plots/breakthroughs_nounpp.html" width="100%" height="600" frameborder="0"></iframe>
