@@ -160,20 +160,20 @@ init_sentence = " ".join(
 )
 
 
-def feed_input(model, hidden, w, stack):
+def feed_input(model, hidden, w):
     inp = torch.autograd.Variable(
         torch.LongTensor([[dictionary.word2idx[w]]]).to(device)
     )
-    out, hidden, stack = model(inp, hidden, stack)
-    return out, hidden, stack
+    out, hidden= model(inp, hidden)
+    return out, hidden
 
 
-def feed_sentence(model, h, sentence, stack):
+def feed_sentence(model, h, sentence):
     outs = []
     for w in sentence:
-        out, h, stack = feed_input(model, h, w, stack)
+        out, h = feed_input(model, h, w)
         outs.append(torch.nn.functional.log_softmax(out[0]).unsqueeze(0))
-    return outs, h , stack
+    return outs, h 
 
 
 # evaluation function
@@ -186,8 +186,8 @@ def eval(model, test_dataloader, init_sentence):
     model.eval()
 
     hidden = model.init_hidden(1)
-    stack = model.init_stack(1)
-    init_out, init_h, init_stack = feed_sentence(model, hidden, init_sentence.split(" "), stack)
+    #stack = model.init_stack(1)
+    init_out, init_h= feed_sentence(model, hidden, init_sentence.split(" "))
     with torch.no_grad():
         for batch in test_dataloader:
             out = None
@@ -201,14 +201,14 @@ def eval(model, test_dataloader, init_sentence):
                 init_h[0].expand(-1, batch_size, -1).contiguous(),
                 init_h[1].expand(-1, batch_size, -1).contiguous(),
             )
-            stack = (
-                init_stack.expand(batch_size, -1, -1).contiguous(),
-            )
-            stack=stack[0]
+            # stack = (
+            #     init_stack.expand(batch_size, -1, -1).contiguous(),
+            # )
+            # stack=stack[0]
             for w in range(sentence.shape[1] - 1):
 
                 word = torch.autograd.Variable(sentence[:, w].unsqueeze(0))
-                out, hidden, stack = model(word, hidden, stack)
+                out, hidden = model(word, hidden)
 
             log_probs = torch.nn.functional.log_softmax(out, dim=-1)
             correct_log_probs = log_probs[0, torch.arange(batch_size), correct]
@@ -315,4 +315,4 @@ df.to_csv(output_path, index=False)
 print(df)
 # to run on cpu : directly copy paste this in terminal
 #
-#python /scratch2/mrenaudin/colorlessgreenRNNs/evaluation_notebooks/evaluate_lstm_on_nounpp.py --classmodel 'Stack_LSTM' --model 'LSTM' --emsize 256 --nhid 256 --memory_dim 650 --memory_size 64 --checkpoint_dir '/scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/stack_lstm' --output_name 'stack_lstm'
+# python /scratch2/mrenaudin/colorlessgreenRNNs/evaluation_notebooks/evaluate_lstm_on_nounpp.py --classmodel 'RNNModel' --model 'LSTM' --emsize 650 --nhid 650 --memory_dim 650 --memory_size 64 --checkpoint_dir '/scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/lstm_adam_full_check_shuffled' --output_name 'lstm_adam_full_check_shuffled'
