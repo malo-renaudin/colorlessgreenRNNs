@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=lstm_adam_full_check# Job name
+#SBATCH --job-name=lstm_adam_full_check_shuffled# Job name
 #SBATCH --partition=gpu 
 #SBATCH --export=ALL 
 #SBATCH --cpus-per-task=6        # Number of CPU cores per task (adjust as needed)
@@ -31,7 +31,7 @@ echo "CUDA_DEVICE: $CUDA_VISIBLE_DEVICES"
 #cbr rnn growing dimension
 #python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name single_cbr_512 --classmodel 'CBR_RNN' --batch_size 256 --emsize 512 --nhid 512 --lr 0.001 --cuda
 #lstm
-python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name lstm_adam_full_check --classmodel 'RNNModel' --model 'LSTM' --emsize 650 --nhid 650 --batch_size 256 --optimizer 'Adam' --cuda 
+python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name lstm_adam_full_check_shuffled --classmodel 'RNNModel' --model 'LSTM' --emsize 650 --nhid 650 --batch_size 256 --optimizer 'Adam' --cuda 
 #single cbr adam a retrain avec parametres par défaut pr checkpoint epoch 0 et 1
 #python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name 8_heads_cbr_512 --classmodel 'CBR_RNN' --batch_size 256 --nheads 8 --emsize 512 --nhid 512 --lr 0.001 --cuda
 #stack lstm

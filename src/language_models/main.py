@@ -122,7 +122,7 @@ if args.optimizer == "SGD":
     optimizer = optim.SGD(model.parameters(), lr=lr)
 elif args.optimizer == "Adam":
     lr=0.001
-    optimizer = optim.Adam(model.parameters(), lr=lr)
+    optimizer = optim.AdamW(model.parameters(), lr=lr)
 else:
     raise ValueError(f"Invalid optimizer: {args.optimizer}")
 if optimizer_state_dict is not None:
@@ -142,10 +142,10 @@ if args.gumbel_softmax:
 reg = args.cell_sparsity_lambda
 
 # LT and ST memory neurons in RNN
-if args.neuron_reg : 
-    lt_indices, st_indices = pick_lt_st_indices
-    lambda_1 = 0.01
-    lambda_2 = 0.01
+# if args.neuron_reg : 
+#     lt_indices, st_indices = pick_lt_st_indices
+#     lambda_1 = 0.01
+#     lambda_2 = 0.01
 
 ###############################################################################
 # Evaluation
@@ -252,7 +252,7 @@ def train():
             hidden = repackage_hidden(hidden)
             output, hidden = model(data, hidden)
             loss_reg = hidden[1].abs().mean()
-            loss = criterion(output.view(-1, ntokens), targets) +reg*loss_reg
+            loss = criterion(output.view(-1, ntokens), targets) #+reg*loss_reg
         # elif args.classmodel == 'RNNModel' and args.model == 'RNN':
         #     hidden = repackage_hidden(hidden)
         #     output,hidden = model(data,hidden)
@@ -273,10 +273,10 @@ def train():
         #     tau_scheduler.step()
         total_loss += loss.item()
 
-        if epoch == 1 and batch <= 500 :  
+        if epoch == 1 and batch <= 300 :  
             save_checkpoint(model, optimizer, args.name, epoch, batch)
-        # if epoch == 1 and batch > 100 and  batch % 100 == 0 :
-        #     save_checkpoint(model, optimizer, args.name, epoch, batch)
+        if epoch == 1 and batch > 300 and  batch % 100 == 0 :
+            save_checkpoint(model, optimizer, args.name, epoch, batch)
             
         # Logging
         temp_str = f"{temperature:8.2f}" if temperature is not None else "   N/A  "
@@ -303,8 +303,8 @@ try:
         
     for epoch in range(k, args.epochs + 1):
         # Shuffle and tokenize the training data
-        # corpus.train = tokenize(corpus.dictionary, os.path.join(args.data, 'train.txt'), shuffle=True)
-        # train_data = batchify(corpus.train, args.batch_size, device)
+        corpus.train = tokenize(corpus.dictionary, os.path.join(args.data, 'train.txt'), shuffle=True)
+        train_data = batchify(corpus.train, args.batch_size, device)
         
         epoch_start_time = time.time()
         

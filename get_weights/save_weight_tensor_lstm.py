@@ -3,8 +3,8 @@ import os
 from pathlib import Path
 
 # Path where checkpoints are stored
-checkpoint_dir_str = "/scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/lstm_adam_full_check"
-checkpoint_files =  [f'epoch_1_batch_{i}.pt' for i in range(0, 501, 1)] + [f'epoch_1_batch_{i}.pt'for i in range(200, 9300, 100)]+[f'epoch_{i}.pt' for i in range(1, 41, 1)]
+checkpoint_dir_str = "/scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/lstm_adam_full_check_shuffled"
+checkpoint_files =  [f'epoch_1_batch_{i}.pt' for i in range(0, 301, 1)] + [f'epoch_1_batch_{i}.pt'for i in range(400, 9300, 100)]+[f'epoch_{i}.pt' for i in range(1, 41, 1)]
 #[f'epoch_1_batch_{i}.pt' for i in range(0, 101, 1)] 
 #[f'epoch_1_batch_{i}.pt'for i in range(200, 9300, 100)]
 checkpoint_dir = Path(checkpoint_dir_str)
