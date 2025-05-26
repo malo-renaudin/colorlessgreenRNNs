@@ -4,5 +4,5 @@ Here you will find plots and explanations.
 
 ## Plots
 
-- [Breakthrough Plot](breakthroughs_nounpp.html)
+- [Breakthrough Plot](plots/breakthroughs_nounpp.html)
 - Other plots here...
