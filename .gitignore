@@ -19,3 +19,5 @@ results/
 *.log
 test-1log
 *.pkl
+*.json
+*.tex
