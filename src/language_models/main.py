@@ -211,8 +211,8 @@ def train():
     total_loss = 0
     start_time = time.time()
     #For LSTM model : initialize hidden state at the beggining of each epoch as in colorlessgreenRNNs
-    #if args.classmodel == "RNNModel":
-    hidden = move_to_device(model.init_hidden(args.batch_size), device)
+    if args.classmodel == "RNNModel":
+        hidden = move_to_device(model.init_hidden(args.batch_size), device)
     if args.classmodel=='Stack_LSTM':
         stack = model.init_stack(args.batch_size)
     
@@ -273,10 +273,10 @@ def train():
         #     tau_scheduler.step()
         total_loss += loss.item()
 
-        if epoch == 1 and batch <= 300 :  
-            save_checkpoint(model, optimizer, args.name, epoch, batch)
-        if epoch == 1 and batch > 300 and  batch % 100 == 0 :
-            save_checkpoint(model, optimizer, args.name, epoch, batch)
+        # if epoch == 1 and batch <= 300 :  
+        #     save_checkpoint(model, optimizer, args.name, epoch, batch)
+        # if epoch == 1 and batch > 300 and  batch % 100 == 0 :
+        #     save_checkpoint(model, optimizer, args.name, epoch, batch)
             
         # Logging
         temp_str = f"{temperature:8.2f}" if temperature is not None else "   N/A  "

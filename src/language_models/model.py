@@ -197,7 +197,7 @@ class CBR_RNN(nn.Module):
         return attn_weight @ value
     
     def attention_layer(self, query, key_cache, value_cache, nheads, temperature, gumbel_softmax):
-        if nheads == 1:
+        if nheads == 1 :
                 query = query.unsqueeze(1)
                 
                 # Ensure all tensors are on the same device
@@ -205,7 +205,7 @@ class CBR_RNN(nn.Module):
                     key_cache = key_cache.to(query.device)
                 if query.device != value_cache.device:
                     value_cache = value_cache.to(query.device)
-                if temperature==1:  
+                if temperature is None:  
                     try:
                         attn_output = scaled_dot_product_attention(
                             query, key_cache, value_cache, is_causal=False

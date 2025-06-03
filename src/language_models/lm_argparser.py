@@ -108,7 +108,7 @@ lm_parser.add_argument(
 lm_parser.add_argument(
     "--gumbel_softmax",
     action="store_true",
-    help="Enable gumbel softmax woth tau scheduler"
+    help="Enable gumbel softmax with tau scheduler"
 )
 
 lm_parser.add_argument(

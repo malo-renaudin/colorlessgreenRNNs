@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=cbr_1h_256_gs_shuffled# Job name
+#SBATCH --job-name=test_attention_128# Job name
 #SBATCH --partition=gpu 
 #SBATCH --export=ALL 
 #SBATCH --cpus-per-task=6        # Number of CPU cores per task (adjust as needed)
@@ -23,7 +23,7 @@ echo "CUDA_DEVICE: $CUDA_VISIBLE_DEVICES"
 
 
 #single head cbr rnn
-python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name cbr_1h_256_gs_shuffled --classmodel 'CBR_RNN' --batch_size 256 --emsize 256 --nhid 256 --optimizer 'Adam' --gumbel_softmax --cuda  #--checkpoint_path /scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/cbr_1h_512/epoch_15.pt --epoch_checkpointed 15
+python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name test_attention_128 --classmodel 'CBR_RNN' --batch_size 512 --emsize 128 --nhid 128 --optimizer 'Adam' --epochs 3 --cuda  #--checkpoint_path /scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/cbr_1h_512/epoch_15.pt --epoch_checkpointed 15
 #multi head cbr rnn
 #python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name cbr8h128_shuffling --classmodel 'CBR_RNN' --batch_size 256 --nheads 8 --emsize 128 --nhid 128 --optimizer 'Adam' --cuda
 #3 heads cbr rnn
@@ -38,3 +38,7 @@ python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs
 #python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name stack_lstm --classmodel 'Stack_LSTM' --batch_size 256 --emsize 256 --nhid 256 --optimizer 'Adam' --memory_dim 650 --memory_size 64 --cuda  #--checkpoint_path /scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/cbr_1h_512/epoch_15.pt --epoch_checkpointed 15
 #sparse cell state lstm
 #python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name lstm_sparse_cell --classmodel 'RNNModel' --model 'LSTM' --emsize 650 --nhid 650 --batch_size 256 --optimizer 'Adam' --cell_sparsity_lambda 1e-5 --cuda 
+#test soft attention 
+#python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name test_attention_128 --classmodel 'CBR_RNN' --batch_size 512 --emsize 128 --nhid 128 --optimizer 'Adam' --epochs 3 --cuda  
+#test gumbel_softmax
+python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name test_attention_128 --classmodel 'CBR_RNN' --batch_size 512 --emsize 128 --nhid 128 --gumbel_softmax --optimizer 'Adam' --epochs 3 --cuda  
