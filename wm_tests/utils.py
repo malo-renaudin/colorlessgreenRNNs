@@ -366,7 +366,7 @@ def plot_attention(att_matrix, sentence):
     fig, ax = plt.subplots(figsize=(12, 12))
 
     # Plot the heatmap
-    cax = ax.matshow(att_matrix_np, cmap='viridis', vmin=0, vmax=1)
+    cax = ax.matshow(att_matrix_np, cmap='brg', vmin=0, vmax=1)
 
     # Set ticks and labels
     ax.set_xticks(np.arange(len(tokens)))

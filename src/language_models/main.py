@@ -217,7 +217,7 @@ def train():
         stack = model.init_stack(args.batch_size)
     
     if epoch == 1:
-        save_checkpoint(model, optimizer, args.name, epoch, 0)
+        save_checkpoint(model, optimizer, args.name, temperature, epoch, 0)
         logging.info(f"Checkpoint saved before the first batch: {epoch}, batch {0}")
 
     for batch, i in enumerate(range(0, train_data.size(0) - 1, args.bptt)):
@@ -329,7 +329,7 @@ try:
         logging.info("-" * 89)
 
         # Save checkpoint at end of epoch
-        save_checkpoint(model, optimizer, args.name, epoch)
+        save_checkpoint(model, optimizer, args.name, temperature, epoch)
         val_loss_data.append(
             {"epoch": epoch, "batch": "end_of_epoch", "val_loss": val_loss}
         )

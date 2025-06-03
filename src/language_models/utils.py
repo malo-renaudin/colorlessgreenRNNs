@@ -70,7 +70,7 @@ def shuffled_batchify(data, bsz, device):
 
 
 # inclure batch index en argument ici comme ça on désengorge script principal
-def save_checkpoint(model, optimizer, experiment_name, epoch, batch=None):
+def save_checkpoint(model, optimizer, experiment_name, epoch, temperature, batch=None):
     """Save model checkpoint."""
     checkpoint_dir = "checkpoints"
 
@@ -83,10 +83,12 @@ def save_checkpoint(model, optimizer, experiment_name, epoch, batch=None):
         filename = f"{experiment_dir}/epoch_{epoch}.pt"
     else:
         filename = f"{experiment_dir}/epoch_{epoch}_batch_{batch}.pt"
+    
     checkpoint = {
         "epoch": epoch,
         "model_state_dict": model.state_dict(),
         "optimizer_state_dict": optimizer.state_dict(),
+        "temperature": temperature
     }
     torch.save(checkpoint, filename)
     logging.info(f"Checkpoint saved: {filename}")
