@@ -140,7 +140,7 @@ ablation['original']['Nounpp']= ppl_original_nounpp
 for task in blimp_tasks :
     task_dataset = BLiMPDataset(task, dictionary)
     task_dataloader = DataLoader(task_dataset, batch_size=526, collate_fn = collate_fn_blimp)
-    ppl_original_blimp = eval_lstm_blimp(model, task_dataloader)
+    ppl_original_blimp = eval_lstm_blimp(model, task_dataloader, device)
     ablation['original']['Blimp'][task]=ppl_original_blimp
 
 for layer in layers:
@@ -163,7 +163,7 @@ for layer in layers:
             for task in blimp_tasks:
                 task_dataset = BLiMPDataset(task, dictionary)
                 task_dataloader = DataLoader(task_dataset, batch_size=526, collate_fn = collate_fn_blimp)
-                ppl_blimp = eval_lstm_blimp(model, task_dataloader)
+                ppl_blimp = eval_lstm_blimp(model, task_dataloader, device)
                 ablation[f'layer_{layer}'][gate]['Blimp'][task][str(i)] = ppl_blimp
 
 torch.save(ablation, '/scratch2/mrenaudin/colorlessgreenRNNs/singular_ablation/great_sv_ablations_one_check.pt')

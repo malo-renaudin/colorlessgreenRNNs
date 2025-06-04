@@ -329,7 +329,7 @@ try:
         logging.info("-" * 89)
 
         # Save checkpoint at end of epoch
-        save_checkpoint(model, optimizer, args.name, temperature, epoch)
+        save_checkpoint(model, optimizer, args.name, epoch, temperature)
         val_loss_data.append(
             {"epoch": epoch, "batch": "end_of_epoch", "val_loss": val_loss}
         )

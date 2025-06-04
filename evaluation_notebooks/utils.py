@@ -225,7 +225,15 @@ def compute_seq_nll(model,data, hidden, batch_size):
     sequence_nll = masked_nll_loss.sum(dim=1)
     return -sequence_nll
 
-def eval_lstm_blimp(model, test_dataloader):
+def move_to_device(hidden, device):
+    """Move each tensor in the hidden state tuple to the specified device."""
+    if isinstance(hidden, torch.Tensor):
+        return hidden.to(device)
+    else:
+        return tuple(move_to_device(h, device) for h in hidden)
+
+
+def eval_lstm_blimp(model, test_dataloader, device):
     model.eval()
     correct_predictions = 0
     total_predictions = 0
@@ -236,13 +244,15 @@ def eval_lstm_blimp(model, test_dataloader):
             sentence_good = batch['sentence_good']
             sentence_bad = batch['sentence_bad']
 
-            good = batch['encoded_good']
-            bad = batch['encoded_bad']
+            good = batch['encoded_good'].to(device)
+            bad = batch['encoded_bad'].to(device)
         
             batch_size = good.size(0)
 
             hidden_good = model.init_hidden(batch_size)
-            hidden_bad = model.init_hidden(batch_size)        
+            hidden_good = move_to_device(hidden_good, device)
+            hidden_bad = model.init_hidden(batch_size) 
+            hidden_bad=move_to_device(hidden_bad,device)       
             seq_nll_good = compute_seq_nll(model,good, hidden_good, batch_size)
             seq_nll_bad = compute_seq_nll(model,bad, hidden_bad, batch_size)
             predictions = (seq_nll_good > seq_nll_bad).cpu().numpy()
@@ -253,6 +263,7 @@ def eval_lstm_blimp(model, test_dataloader):
     accuracy = correct_predictions / total_predictions
     print(f"Accuracy on {test_dataloader.dataset.dataset.config_name}: {accuracy * 100:.2f}%")
     return accuracy
+
 
 def eval_lstm_nounpp(model, test_dataloader, init_sentence, dictionary, device):
     condition_accuracies = defaultdict(int)
@@ -269,15 +280,16 @@ def eval_lstm_nounpp(model, test_dataloader, init_sentence, dictionary, device):
         for batch in test_dataloader:
             out = None
             written = batch["sentence"]
-            sentence = batch["encoded_sentence"]
-            correct = batch["encoded_correct"]
-            wrong = batch["encoded_wrong"]
+            sentence = batch["encoded_sentence"].to(device)
+            correct = batch["encoded_correct"].to(device)
+            wrong = batch["encoded_wrong"].to(device)
             condition = batch["condition"]
             batch_size = sentence.size(0)
             hidden = (
                 init_h[0].expand(-1, batch_size, -1).contiguous(),
                 init_h[1].expand(-1, batch_size, -1).contiguous(),
             )
+            hidden = move_to_device(hidden, device)
             # stack = (
             #     init_stack.expand(batch_size, -1, -1).contiguous(),
             # )
