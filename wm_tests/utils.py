@@ -315,7 +315,7 @@ def eval(model, dataloader, nheads, temperature, gs):
             input_seq = encoded_sentence[:, :-1].transpose(0, 1)  # (seq_len-1, batch_size)
             target_seq = encoded_sentence[:, 1:].transpose(0, 1)
             cache = model.init_cache(input_seq, 1)
-            output, hidden, attn_weights = model(input_seq, cache, nheads, temperature, gs)
+            output, hidden = model(input_seq, cache, nheads, temperature, gs)
             log_probs = F.log_softmax(output, dim=-1)  # shape (seq_len-1, batch_size, vocab_size)
             
             nll_loss = F.nll_loss(
@@ -349,8 +349,8 @@ def eval(model, dataloader, nheads, temperature, gs):
             # Compute repeat surprisal ratio as percentage
             repeat_surprisal = (surprisal2_repeats / surprisal1_repeats) * 100
             all_repeat_surprisals[f'list len : {condition[0][0]}, prompt len : {condition[0][1]}']=repeat_surprisal
-            break
-    return all_repeat_surprisals, attn_weights, encoded_sentence
+
+    return all_repeat_surprisals
         
         
 def plot_attention(att_matrix, sentence):
