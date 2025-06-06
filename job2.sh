@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=test_attention_650# Job name
+#SBATCH --job-name=test_attention_1024# Job name
 #SBATCH --partition=gpu 
 #SBATCH --export=ALL 
 #SBATCH --cpus-per-task=6        # Number of CPU cores per task (adjust as needed)
@@ -41,4 +41,4 @@ echo "CUDA_DEVICE: $CUDA_VISIBLE_DEVICES"
 #test soft attention 
 #python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name test_attention_128 --classmodel 'CBR_RNN' --batch_size 512 --emsize 128 --nhid 128 --optimizer 'Adam' --epochs 3 --cuda  
 #test gumbel_softmax
-python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name test_attention_650 --classmodel 'CBR_RNN' --batch_size 512 --emsize 650 --nhid 650 --gumbel_softmax --optimizer 'Adam' --epochs 40 --cuda  
+python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name test_attention_1024 --classmodel 'CBR_RNN' --batch_size 512 --emsize 1024 --nhid 1024 --gumbel_softmax --optimizer 'Adam' --epochs 40 --bptt 100 --cuda  
