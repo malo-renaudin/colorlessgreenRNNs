@@ -7,11 +7,12 @@ from src.language_models.model import RNNModel as lstm
 import torch
 from wm_tests.utils import WMTestDataset, collate_fn
 from src.language_models.dictionary_corpus import Dictionary
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 import torch.nn.functional as F
 from src.language_models.utils import move_to_device, repackage_hidden
 from utils import evaluate_checkpoint
 from tqdm import tqdm
+import pandas as pd
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 data_path = "/scratch2/mrenaudin/colorlessgreenRNNs/english_data"
@@ -19,6 +20,7 @@ dictionary = Dictionary(data_path)
 model = lstm("LSTM", len(dictionary), 650, 650, 2, 0.2, False).to(device)
 checkpoint = '/scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/lstm_adam_full_check_shuffled/epoch_40.pt'
 batch_size=230
+
 
 repeat_marker = '/scratch2/mrenaudin/colorlessgreenRNNs/wm_tests/rnn_input_files/categorized_lists_sce3_repeat_markers.txt'
 repeat = '/scratch2/mrenaudin/colorlessgreenRNNs/wm_tests/rnn_input_files/categorized_lists_sce3_repeat.txt'
@@ -37,7 +39,9 @@ def eval(model, dataloader, batch_size):
     # Forward pass with hidden state update word by word
     with torch.no_grad():
         for batch in dataloader:
-            encoded_sentence = batch["encoded_sentence"]
+            encoded_sentence = batch["encoded_sentence"][:,13:]
+            encoded_sentence[8]=12 #replace dot by comma
+            encoded_sentence[9]= 16
             condition = batch["condition"]
             marker = batch["marker"]
             batch_size, seq_len = encoded_sentence.shape
@@ -58,13 +62,12 @@ def eval(model, dataloader, batch_size):
                     
                     # Reshape back to (seq_len-1, batch_size)
             nll_loss = nll_loss.view(seq_len - 1, batch_size).transpose(0, 1)  # (batch_size, seq_len-1)        
-            mask_list1 = (marker[:, 1:] == 1)  # remove first token since nll_loss aligns with shifted target
-            mask_list2 = (marker[:, 1:] == 3)
+            mask_list1 = (marker[:, 1:] == 1)[:,13:]  # remove first token since nll_loss aligns with shifted target
+            mask_list2 = (marker[:, 1:] == 3)[:,13:]
             
             # Extract surprisal for each list and reshape
             # Number of tokens in each list should be condition[0][0]*2 (including punctuation)
-            list_len = condition[0][0] * 2
-            
+            list_len = condition[0][0] * 2           
             surprisal_list1 = nll_loss[mask_list1].view(batch_size, list_len)
             surprisal_list2 = nll_loss[mask_list2].view(batch_size, list_len)
             
@@ -153,4 +156,4 @@ def evaluate_checkpoint(model, test_loader, batch_size, layer=2, num_neurons=650
     return results
         
 res = evaluate_checkpoint(model, repeat_dataloader, batch_size)
-torch.save(res, '/scratch2/mrenaudin/colorlessgreenRNNs/ablation/wm_abl')
+torch.save(res, '/scratch2/mrenaudin/colorlessgreenRNNs/ablation/wm_abl_shorter_sent_comma')
