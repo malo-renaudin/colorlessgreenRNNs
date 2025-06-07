@@ -128,6 +128,12 @@ with open(checkpoint_path, "rb") as f:
     )
     model.load_state_dict(state_dict["model_state_dict"])
 
+def clear_memory():
+    """Clear GPU memory"""
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    gc.collect()
+
 ########################################################################################
 # Evaluation Function
 ########################################################################################
@@ -147,6 +153,9 @@ for layer in layers:
     ablation[f'layer_{layer}'] = {}
     for gate in gates:
         ablation[f'layer_{layer}'][gate] = {'Nounpp': {}, 'Blimp': {}}
+        
+        for task in blimp_tasks:
+            ablation[f'layer_{layer}'][gate]['Blimp'][task] = {}
             
         for i in tqdm(range(n), desc=f"Layer {layer}, Gate {gate}"):
             
