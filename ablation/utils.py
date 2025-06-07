@@ -200,7 +200,7 @@ def cache_weights(model):
 }
     return weights
 
-def evaluate_checkpoint(model, test_loader, init_sentence, dictionary, device, layer=2, num_neurons=650):
+def evaluate_checkpoint(model, test_loader, init_sentence, dictionary, device, eval, layer=2, num_neurons=650):
     results = {}
     original_accuracies = eval(model, test_loader, init_sentence, dictionary, device)
     results["original"] = original_accuracies

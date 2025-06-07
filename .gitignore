@@ -21,3 +21,4 @@ test-1log
 *.pkl
 *.json
 *.tex
+/scratch2/mrenaudin/colorlessgreenRNNs/ablation/wm_abl
