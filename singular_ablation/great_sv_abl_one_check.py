@@ -30,7 +30,7 @@ layers = [0,1]
 weight_type = 'hh'
 gates = ['cell','forget','input','output']
 ntokens = 50001
-n = 10
+n = 30
 checkpoint_path = '/scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/lstm_adam_full_check_shuffled/epoch_40.pt'
 
 ########################################################################################
