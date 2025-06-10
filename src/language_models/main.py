@@ -95,7 +95,7 @@ criterion = nn.CrossEntropyLoss()
 
 logging.info("Building the model")
 print(args.model)
-model, optimizer_state_dict = load_model(
+model, optimizer_state_dict, temperature = load_model(
     args.classmodel,
     args.model,
     ntokens,

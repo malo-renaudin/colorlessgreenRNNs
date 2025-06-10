@@ -13,12 +13,12 @@ from pathlib import Path
 from tqdm import tqdm
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = m.CBR_RNN(50001, 650, 650, 1, 0, device)
+model = m.CBR_RNN(50001, 1024, 1024, 1, 0, device)
 data_path = "/scratch2/mrenaudin/colorlessgreenRNNs/english_data"
 dictionary = Dictionary(data_path)
 nounpp = "//scratch2/mrenaudin/colorlessgreenRNNs/NounPP/Stimuli/nounpp.txt"
-checkpoint_dir_str = "/scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/test_attention_650"
-checkpoint_files =  [f'epoch_{i}.pt' for i in range(1, 39, 1)]
+checkpoint_dir_str = "/scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/test_attention_1024"
+checkpoint_files =  [f'epoch_{i}.pt' for i in range(1, 29, 1)]
 checkpoint_dir = Path(checkpoint_dir_str)
 
 test_dataset = NounPPDataset(nounpp, dictionary)
@@ -88,4 +88,4 @@ for item_name in tqdm(checkpoint_files, desc="Processing checkpoints"):
     accuracies = eval(model, test_dataloader, temperature)
     eval_tt[epoch]= accuracies
 
-torch.save(eval_tt, '/scratch2/mrenaudin/colorlessgreenRNNs/evaluation_notebooks/results/test_attention_650')
+torch.save(eval_tt, '/scratch2/mrenaudin/colorlessgreenRNNs/evaluation_notebooks/results/test_attention_1024')

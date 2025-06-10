@@ -142,9 +142,10 @@ def load_model(
             )
             model.load_state_dict(state_dict["model_state_dict"])
             optimizer_state_dict = state_dict["optimizer_state_dict"]
+            temperature = state_dict['temperature']
 
     model = model.to(device)
-    return model, optimizer_state_dict
+    return model, optimizer_state_dict, temperature
 
 def get_memory_usage():
     """Get current memory usage in MB"""
