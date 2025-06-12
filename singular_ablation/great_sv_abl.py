@@ -36,7 +36,7 @@ gates = ['cell','forget','input','output']
 ntokens = 50001
 
 
-nb_abl_per_weight = 10
+nb_abl_per_weight = 3
 
 
 ##########################################################################################
@@ -171,17 +171,17 @@ def eval(model, test_dataloader, init_sentence):
 
     model.eval()
 
-    hidden = model.init_hidden(1)
-    #stack = model.init_stack(1)
+    hidden = move_to_device(model.init_hidden(1), device)
     init_out, init_h= feed_sentence(model, hidden, init_sentence.split(" "))
+    
     with torch.no_grad():
         for batch in test_dataloader:
             out = None
             written = batch["sentence"]
-            sentence = batch["encoded_sentence"]
-            correct = batch["encoded_correct"]
-            wrong = batch["encoded_wrong"]
-            condition = batch["condition"]
+            sentence = batch["encoded_sentence"].to(device)
+            correct = batch["encoded_correct"].to(device)
+            wrong = batch["encoded_wrong"].to(device)
+            condition = batch["condition"]#.to(device)
             batch_size = sentence.size(0)
             hidden = (
                 init_h[0].expand(-1, batch_size, -1).contiguous(),
@@ -195,6 +195,8 @@ def eval(model, test_dataloader, init_sentence):
 
                 word = torch.autograd.Variable(sentence[:, w].unsqueeze(0))
                 out, hidden = model(word, hidden)
+                
+            hidden = repackage_hidden(hidden)
 
             log_probs = torch.nn.functional.log_softmax(out, dim=-1)
             correct_log_probs = log_probs[0, torch.arange(batch_size), correct]
@@ -206,15 +208,15 @@ def eval(model, test_dataloader, init_sentence):
                 condition_counts[cond] += 1
                 condition_accuracies[cond] += pred
 
-                sentence_details.append(
-                    {
-                        "sentence": written[i],
-                        "condition": condition[i],
-                        "correct_log_prob": correct_log_probs[i],
-                        "wrong_log_prob": wrong_log_probs[i],
-                        "model_prefers_correct": pred,
-                    }
-                )
+                # sentence_details.append(
+                #     {
+                #         "sentence": written[i],
+                #         "condition": condition[i],
+                #         "correct_log_prob": correct_log_probs[i],
+                #         "wrong_log_prob": wrong_log_probs[i],
+                #         "model_prefers_correct": pred,
+                #     }
+                # )
     final_accuracies = {
         cond: condition_accuracies[cond] / condition_counts[cond]
         for cond in condition_accuracies

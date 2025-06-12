@@ -13,6 +13,7 @@ from datasets import load_dataset
 from language_models.model import RNNModel as lstm
 import torch
 from language_models.dictionary_corpus import Dictionary, Corpus, tokenize
+from language_models.utils import move_to_device, repackage_hidden
 from torch.utils.data import Dataset, DataLoader
 from torch.nn.utils.rnn import pad_sequence
 import torch.nn.functional as F
@@ -208,22 +209,23 @@ def eval(model, test_dataloader):
     with torch.no_grad():
         for batch in test_dataloader:
 
-            sentence_good = batch['sentence_good']
-            sentence_bad = batch['sentence_bad']
+            sentence_good = batch['sentence_good'].to(device)
+            sentence_bad = batch['sentence_bad'].to(device)
 
             good = batch['encoded_good']
             bad = batch['encoded_bad']
         
             batch_size = good.size(0)
 
-            hidden_good = model.init_hidden(batch_size)
-            hidden_bad = model.init_hidden(batch_size)        
+            hidden_good = move_to_device(model.init_hidden(batch_size), device)
+            hidden_bad = move_to_device(model.init_hidden(batch_size), device)        
             seq_nll_good = compute_seq_nll(model,good, hidden_good, batch_size)
             seq_nll_bad = compute_seq_nll(model,bad, hidden_bad, batch_size)
             predictions = (seq_nll_good > seq_nll_bad).cpu().numpy()
             correct_predictions += np.sum(predictions)
             total_predictions += batch_size
-      
+            hidden_good=repackage_hidden(hidden_good)
+            hidden_bad = repackage_hidden(hidden_bad)
             
     accuracy = correct_predictions / total_predictions
     print(f"Accuracy on {test_dataloader.dataset.dataset.config_name}: {accuracy * 100:.2f}%")

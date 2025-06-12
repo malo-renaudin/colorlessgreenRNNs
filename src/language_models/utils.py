@@ -14,6 +14,8 @@ import psutil
 import gc
 import numpy as np 
 import random
+import torch.nn as nn
+import math
 
 def repackage_hidden(h):
     """Detaches hidden states from their history."""
@@ -120,7 +122,8 @@ def load_model(
     tied,
     checkpoint_path,
     memory_size,
-    memory_dim
+    memory_dim,
+    bptt
 ):
     import model as m
 
@@ -128,7 +131,7 @@ def load_model(
         model = m.RNNModel(model, ntokens, emsize, nhid, nlayers, dropout, tied)
 
     elif classmodel == "CBR_RNN":
-        model = m.CBR_RNN(ntokens, emsize, nhid, nheads, dropout, device)
+        model = m.CBR_RNN(ntokens, emsize, nhid, nheads, bptt, dropout, device)
         
     elif classmodel == 'Stack_LSTM':
         model = m.Stack_LSTM(ntokens, emsize, nhid, device, nlayers, memory_size, memory_dim)
@@ -145,7 +148,7 @@ def load_model(
             temperature = state_dict['temperature']
 
     model = model.to(device)
-    return model, optimizer_state_dict, temperature
+    return model, optimizer_state_dict#, temperature
 
 def get_memory_usage():
     """Get current memory usage in MB"""
@@ -211,3 +214,26 @@ def pick_lt_st_indices(num_layers, hidden_size_per_layer, n_lt, n_st, seed=None)
     st_indices = random.sample(remaining_indices, n_st)
 
     return lt_indices, st_indices
+
+class PositionalEncoding(nn.Module):
+    """Sinusoidal positional encoding as used in Transformer models"""
+    
+    def __init__(self, d_model, max_len=5000):
+        super().__init__()
+        
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0).transpose(0, 1)  # Shape: (max_len, 1, d_model)
+        
+        self.register_buffer('pe', pe)
+    
+    def forward(self, x):
+        """
+        Args:
+            x: Tensor of shape (seq_len, batch_size, d_model)
+        """
+        return x + self.pe[:x.size(0), :]

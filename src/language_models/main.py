@@ -95,7 +95,7 @@ criterion = nn.CrossEntropyLoss()
 
 logging.info("Building the model")
 print(args.model)
-model, optimizer_state_dict, temperature = load_model(
+model, optimizer_state_dict = load_model(
     args.classmodel,
     args.model,
     ntokens,
@@ -108,7 +108,8 @@ model, optimizer_state_dict, temperature = load_model(
     args.tied,
     args.checkpoint_path,
     args.memory_size,
-    args.memory_dim
+    args.memory_dim,
+    args.bptt
 )
 
 logging.info(f"Built {args.classmodel}")
@@ -167,7 +168,7 @@ def evaluate(data_source, temperature):
             
             if args.classmodel == "CBR_RNN":
                 cache = model.init_cache(data, args.nheads)
-                output, hidden = model(data, cache, args.nheads, temperature, args.gumbel_softmax)
+                output, hidden = model(data, cache, args.nheads, temperature, args.gumbel_softmax, args.positional_encoding)
                 output_flat = output.reshape(-1, output.size(-1))
                 targets_flat = targets.reshape(-1)
                 total_loss += (
@@ -232,7 +233,7 @@ def train():
             # Forward pass on chunk
         if args.classmodel == "CBR_RNN":
             cache = model.init_cache(data, args.nheads)#for CBR_RNN, initialize cache once per batch as in the original code
-            output,_ = model(data, cache, args.nheads, temperature, args.gumbel_softmax)
+            output,_ = model(data, cache, args.nheads, temperature, args.gumbel_softmax, args.positional_encoding)
             
             # Reshape outputs and targets
             output_flat = output.reshape(-1, output.size(-1))

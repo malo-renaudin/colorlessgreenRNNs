@@ -11,6 +11,7 @@ from torch.nn.functional import scaled_dot_product_attention
 import numpy as np
 import logging
 import math
+from utils import PositionalEncoding
 
 
 class RNNModel(nn.Module):
@@ -91,7 +92,7 @@ class CBR_RNN(nn.Module):
     # goal here is to reuse CBR_RNN but with scaled dot product attention for more efficient computations.
     # Also I got rid of options such as loading pretrained embeddings, and ablating attention to simplify the code.
     # In the future if those options are needed, they can still be copy pasted from William's code as the structure hasn't changed
-    def __init__(self, ntoken, ninp, nhid, nheads, dropout=0.5, device=None):
+    def __init__(self, ntoken, ninp, nhid, nheads, bptt, dropout=0.5, device=None):
         super().__init__()
         # same layers as Timkey
         self.device = device
@@ -100,6 +101,7 @@ class CBR_RNN(nn.Module):
         self.drop = nn.Dropout(dropout)
         self.score_attn = nn.Softmax(dim=-1)
         self.encoder = nn.Embedding(ntoken, ninp)
+        self.pos_encoder = PositionalEncoding(ninp, bptt)
         self.q = nn.Linear(ninp + nhid, nhid)
         self.intermediate_h = nn.Linear(nhid * 4, nhid * 4)
         self.decoder = nn.Linear(nhid, ntoken)
@@ -259,12 +261,14 @@ class CBR_RNN(nn.Module):
         query = query.unsqueeze(1)
         return query
     
-    def forward(self, observation, initial_cache, nheads, temperature, gumbel_softmax):
+    def forward(self, observation, initial_cache, nheads, temperature, gumbel_softmax, positional_encoding):
         seq_len = observation.size(0)
         hidden, key_cache, value_cache = initial_cache
 
         # 1. Encode observations
         emb = self.drop(self.encoder(observation))
+        if positional_encoding:
+            emb=self.pos_encoder(emb)
         del observation  # No longer needed after encoding
         
         for i in range(seq_len):

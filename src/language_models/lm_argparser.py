@@ -135,3 +135,8 @@ lm_parser.add_argument(
     action = 'store_true',
     help ='enable lt st neuron regularization in an RNN'
 )
+lm_parser.add_argument(
+    "--positional_encoding",
+    action="store_true",
+    help="Enable sinusoidal positional encoding"
+)
