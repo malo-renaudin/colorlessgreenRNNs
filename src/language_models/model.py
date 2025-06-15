@@ -11,7 +11,7 @@ from torch.nn.functional import scaled_dot_product_attention
 import numpy as np
 import logging
 import math
-from utils import PositionalEncoding
+from src.language_models.utils import PositionalEncoding
 
 
 class RNNModel(nn.Module):

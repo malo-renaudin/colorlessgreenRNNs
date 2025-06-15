@@ -1,19 +1,22 @@
 import sys
 import os
 
-# Get the directory of the current script
-script_dir = os.path.dirname(os.path.abspath(__file__))
-# Go up one level from the script's directory (evaluation_notebooks)
-parent_dir = os.path.dirname(script_dir)
-# Join with 'src' to get the correct path to the src directory
-src_dir = os.path.join(parent_dir, "src")
-sys.path.append(os.path.abspath(src_dir))
+# # Get the directory of the current script
+# script_dir = os.path.dirname(os.path.abspath(__file__))
+# # Go up one level from the script's directory (evaluation_notebooks)
+# parent_dir = os.path.dirname(script_dir)
+# # Join with 'src' to get the correct path to the src directory
+# src_dir = os.path.join(parent_dir, "src")
+# sys.path.append(os.path.abspath(src_dir))
+
+sys.path.append('/scratch2/mrenaudin/colorlessgreenRNNs')
+
 
 from datasets import load_dataset
-from language_models.model import RNNModel as lstm
+from src.language_models.model import RNNModel as lstm
 import torch
-from language_models.dictionary_corpus import Dictionary, Corpus, tokenize
-from language_models.utils import move_to_device, repackage_hidden
+from src.language_models.dictionary_corpus import Dictionary, Corpus, tokenize
+from src.language_models.utils import move_to_device, repackage_hidden
 from torch.utils.data import Dataset, DataLoader
 from torch.nn.utils.rnn import pad_sequence
 import torch.nn.functional as F
@@ -209,11 +212,11 @@ def eval(model, test_dataloader):
     with torch.no_grad():
         for batch in test_dataloader:
 
-            sentence_good = batch['sentence_good'].to(device)
-            sentence_bad = batch['sentence_bad'].to(device)
+            # sentence_good = batch['sentence_good'].to(device)
+            # sentence_bad = batch['sentence_bad'].to(device)
 
-            good = batch['encoded_good']
-            bad = batch['encoded_bad']
+            good = batch['encoded_good'].to(device)
+            bad = batch['encoded_bad'].to(device)
         
             batch_size = good.size(0)
 
