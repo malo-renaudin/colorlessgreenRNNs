@@ -134,7 +134,7 @@ if optimizer_state_dict is not None:
 # Temperature Scheduler
 ###############################################################################
 if args.gumbel_softmax:
-    temp_scheduler = TemperatureScheduler(total_steps= args.epochs)
+    temp_scheduler = TemperatureScheduler(total_steps= args.epochs, min_temp=args.min_temp)
 ###############################################################################
 # Regularizations
 ###############################################################################

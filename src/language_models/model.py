@@ -11,7 +11,7 @@ from torch.nn.functional import scaled_dot_product_attention
 import numpy as np
 import logging
 import math
-from src.language_models.utils import PositionalEncoding
+#from src.language_models.utils import PositionalEncoding
 
 
 class RNNModel(nn.Module):
@@ -101,7 +101,7 @@ class CBR_RNN(nn.Module):
         self.drop = nn.Dropout(dropout)
         self.score_attn = nn.Softmax(dim=-1)
         self.encoder = nn.Embedding(ntoken, ninp)
-        self.pos_encoder = PositionalEncoding(ninp, bptt)
+        #self.pos_encoder = PositionalEncoding(ninp, bptt)
         self.q = nn.Linear(ninp + nhid, nhid)
         self.intermediate_h = nn.Linear(nhid * 4, nhid * 4)
         self.decoder = nn.Linear(nhid, ntoken)
@@ -267,8 +267,8 @@ class CBR_RNN(nn.Module):
 
         # 1. Encode observations
         emb = self.drop(self.encoder(observation))
-        if positional_encoding:
-            emb=self.pos_encoder(emb)
+        # if positional_encoding:
+        #     emb=self.pos_encoder(emb)
         del observation  # No longer needed after encoding
         
         for i in range(seq_len):

@@ -140,3 +140,9 @@ lm_parser.add_argument(
     action="store_true",
     help="Enable sinusoidal positional encoding"
 )
+lm_parser.add_argument(
+    "--min_temp",
+    type=float,
+    default=0.1,
+    help="minimum temperature for the gumbel softmax"
+)
