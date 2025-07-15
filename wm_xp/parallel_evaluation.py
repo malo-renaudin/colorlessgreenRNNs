@@ -5,6 +5,23 @@ Simple parallel evaluation
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor
 import json
+import torch
+import os
+
+def get_optimal_workers():
+    """Auto-detect optimal number of workers"""
+    if torch.cuda.is_available():
+        gpu_count = torch.cuda.device_count()
+        # For evaluation, we can often handle more workers than GPUs
+        # since models are smaller during inference
+        optimal = min(gpu_count * 2, 8)  # 2x GPUs but cap at 8
+        print(f"Detected {gpu_count} GPUs, using {optimal} workers")
+        return optimal
+    else:
+        cpu_count = os.cpu_count()
+        optimal = min(cpu_count - 1, 4)  # Leave 1 core free
+        print(f"No GPU detected, using {optimal} CPU workers")
+        return optimal
 
 def eval_single_config(config_dir, data_path, eval_dataset, eval_func, device):
     """Evaluate all checkpoints in one config directory"""
@@ -26,11 +43,11 @@ def eval_single_config(config_dir, data_path, eval_dataset, eval_func, device):
     
     return f"Completed {config_dir.name}"
 
-def run_evaluation(checkpoints_dir, data_path, eval_dataset, eval_func, device):
+def run_evaluation(checkpoints_dir, data_path, eval_dataset, eval_func, max_workers,device):
     """Run evaluation on all configs in parallel"""
     config_dirs = [d for d in Path(checkpoints_dir).iterdir() if d.is_dir()]
-    
-    with ProcessPoolExecutor(max_workers=4) as executor:
+    nb_workers = get_optimal_workers()
+    with ProcessPoolExecutor(max_workers=nb_workers) as executor:
         futures = [
             executor.submit(eval_single_config, config_dir, data_path, eval_dataset, eval_func, device) 
             for config_dir in config_dirs

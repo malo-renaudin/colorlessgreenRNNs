@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import itertools
 
-def generate_configs(hidden_dim_range, heads_range, temp_range, gumbel_softmax_options, output):
+def generate_config(hidden_dim_range, heads_range, temp_range, gumbel_softmax_options, output):
 
 
     # Generate all combinations using itertools.product

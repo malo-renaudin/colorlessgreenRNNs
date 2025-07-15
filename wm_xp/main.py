@@ -34,9 +34,9 @@ checkpoints_dir.mkdir(exist_ok=True)
 
 
 # Create config file in the config subfolder
-config_file_path = config_dir / args.config_name  
+config_file_path = config_dir / args.name 
 print("Creating config...")
-generate_config(args.hidden_dims, args.num_heads, args.temperature, args.gumbel_softmax, str(config_file_path))
+generate_config(args.hidden_dims, args.num_heads, args.temperatures, args.gumbel_softmax, str(config_file_path))
 
 # Run grid search
 print("Running grid search...")
