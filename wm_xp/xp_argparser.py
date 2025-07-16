@@ -14,6 +14,8 @@ xp_parser.add_argument("--temperatures", type=float, nargs="+", default=[0.1, 0.
 xp_parser.add_argument("--gumbel_softmax", type=lambda x: x.lower()=='true', nargs="+", default=[True, False])
 
 #grid search argument
-xp_parser.add_argument('--grid_search_script', type=str, default='/scratch2/mrenaudin/colorlessgreenRNNs/wm_xp/grid_search/gs.sh')
+xp_parser.add_argument('--grid_search_script', type=str, default='/scratch2/mrenaudin/colorlessgreenRNNs/wm_xp/gs_eval.sh')
 #eval argument
 xp_parser.add_argument('--nounpp', type=str, default = "//scratch2/mrenaudin/colorlessgreenRNNs/NounPP/Stimuli/nounpp.txt")
+xp_parser.add_argument('--eval_script', type=str, default='/scratch2/mrenaudin/colorlessgreenRNNs/wm_xp/tests/tests.py',
+                   help='Path to the evaluation script')
