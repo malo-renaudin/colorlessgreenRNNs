@@ -72,9 +72,9 @@ def shuffled_batchify(data, bsz, device):
 
 
 # inclure batch index en argument ici comme ça on désengorge script principal
-def save_checkpoint(model, optimizer, experiment_name, epoch, temperature, batch=None):
+def save_checkpoint(model, optimizer, experiment_name, epoch, temperature, checkpoint_dir, batch=None):
     """Save model checkpoint."""
-    checkpoint_dir = "checkpoints"
+    #checkpoint_dir = "checkpoints"
 
     # Create a subfolder for the experiment within the checkpoints directory
     experiment_dir = os.path.join(checkpoint_dir, experiment_name)

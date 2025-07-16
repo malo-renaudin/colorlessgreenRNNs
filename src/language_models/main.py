@@ -218,7 +218,7 @@ def train():
         stack = model.init_stack(args.batch_size)
     
     if epoch == 1:
-        save_checkpoint(model, optimizer, args.name, temperature, epoch, 0)
+        save_checkpoint(model, optimizer, args.name, epoch, temperature, args.checkpoint_dir, 0)
         logging.info(f"Checkpoint saved before the first batch: {epoch}, batch {0}")
 
     for batch, i in enumerate(range(0, train_data.size(0) - 1, args.bptt)):
@@ -233,7 +233,7 @@ def train():
             # Forward pass on chunk
         if args.classmodel == "CBR_RNN":
             cache = model.init_cache(data, args.nheads)#for CBR_RNN, initialize cache once per batch as in the original code
-            output,_ = model(data, cache, args.nheads, temperature, args.gumbel_softmax, args.positional_encoding)
+            output,_ = model(data, cache, args.nheads, temperature, args.gumbel_softmax)
             
             # Reshape outputs and targets
             output_flat = output.reshape(-1, output.size(-1))
@@ -330,7 +330,7 @@ try:
         logging.info("-" * 89)
 
         # Save checkpoint at end of epoch
-        save_checkpoint(model, optimizer, args.name, epoch, temperature)
+        save_checkpoint(model, optimizer, args.name, epoch, temperature, args.checkpoint_dir)
         val_loss_data.append(
             {"epoch": epoch, "batch": "end_of_epoch", "val_loss": val_loss}
         )

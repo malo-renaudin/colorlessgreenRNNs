@@ -144,7 +144,7 @@ class CBR_RNN(nn.Module):
         if nheads == 1:
             key_cache = torch.zeros(bsz, 1, 1, self.nhid).to(self.device) 
             value_cache = torch.zeros(bsz, 1, 1, self.nhid).to(self.device) 
-        else:
+        elif nheads>1:
             key_cache = torch.zeros(bsz, 1, self.nhid).to(self.device) 
             value_cache = torch.zeros(bsz, 1, self.nhid).to(self.device) 
         return hidden, key_cache, value_cache
@@ -166,8 +166,7 @@ class CBR_RNN(nn.Module):
             
         return key_cache, value_cache, hidden
     
-    @staticmethod
-    def temperature_attention(query, key, value, temperature, gumbel_softmax=None, attn_mask=None,dropout_p=0.0,
+    def hard_attention_single_head(self,query, key, value, temperature, gumbel_softmax=None, attn_mask=None,dropout_p=0.0,
         is_causal=False, scale=None, enable_gqa=False) -> torch.Tensor:
         L, S = query.size(-2), key.size(-2)
         scale_factor = 1 / math.sqrt(query.size(-1)) if scale is None else scale
@@ -195,9 +194,79 @@ class CBR_RNN(nn.Module):
         else : 
             attn_weight = attn_weight/temperature
             attn_weight = torch.softmax(attn_weight, dim=-1)
-        attn_weight = torch.dropout(attn_weight, dropout_p, train=True)
+        attn_weight = torch.dropout(attn_weight, dropout_p, train=self.training)
         return attn_weight @ value
     
+    def hard_attention_multi_head(self,query, key, value, num_heads, temperature, 
+                                attn_mask=None, dropout_p=0.0, is_causal=False, scale=None, 
+                                enable_gqa=False) -> torch.Tensor:
+
+      
+        batch_size, seq_len, embed_dim = query.shape
+        head_dim = embed_dim // num_heads
+        
+        # Reshape for multi-head attention: (batch_size, seq_len, num_heads, head_dim)
+        query = query.view(batch_size, seq_len, num_heads, head_dim)
+        key = key.view(batch_size, key.size(1), num_heads, head_dim)
+        value = value.view(batch_size, value.size(1), num_heads, head_dim)
+        
+        # Transpose to: (batch_size, num_heads, seq_len, head_dim)
+        query = query.transpose(1, 2)
+        key = key.transpose(1, 2)
+        value = value.transpose(1, 2)
+        
+        # Get dimensions for attention computation
+        L, S = query.size(-2), key.size(-2)
+        scale_factor = 1 / math.sqrt(query.size(-1)) if scale is None else scale
+        
+        # Create attention bias
+        attn_bias = torch.zeros(L, S, dtype=query.dtype, device=query.device)
+        
+        # Apply causal masking if needed
+        if is_causal:
+            assert attn_mask is None
+            temp_mask = torch.ones(L, S, dtype=torch.bool).tril(diagonal=0)
+            attn_bias.masked_fill_(temp_mask.logical_not(), float("-inf"))
+            attn_bias = attn_bias.to(query.dtype)
+        
+        # Apply custom attention mask if provided
+        if attn_mask is not None:
+            if attn_mask.dtype == torch.bool:
+                attn_bias.masked_fill_(attn_mask.logical_not(), float("-inf"))
+            else:
+                attn_bias = attn_mask + attn_bias
+        
+        # Handle grouped query attention
+        if enable_gqa:
+            key = key.repeat_interleave(query.size(-3)//key.size(-3), -3)
+            value = value.repeat_interleave(query.size(-3)//value.size(-3), -3)
+        
+        # Compute attention weights for all heads
+        # query: (batch_size, num_heads, seq_len, head_dim)
+        # key: (batch_size, num_heads, seq_len, head_dim)
+        print(query.shape)
+        print(key.shape)
+        attn_weight = query @ key.transpose(-2, -1) * scale_factor
+        attn_weight += attn_bias.unsqueeze(0).unsqueeze(0)  # Broadcast to all heads
+        
+       
+        attn_weight = torch.nn.functional.gumbel_softmax(attn_weight, tau=temperature, hard=False, dim=-1)
+        
+        
+        # Apply dropout
+        attn_weight = torch.dropout(attn_weight, dropout_p, train=self.training)
+        
+        # Apply attention to values
+        # attn_weight: (batch_size, num_heads, seq_len, seq_len)
+        # value: (batch_size, num_heads, seq_len, head_dim)
+        attn_output = attn_weight @ value  # (batch_size, num_heads, seq_len, head_dim)
+        
+        # Reshape back to original format
+        attn_output = attn_output.transpose(1, 2)  # (batch_size, seq_len, num_heads, head_dim)
+        attn_output = attn_output.contiguous().view(batch_size, seq_len, embed_dim)
+        
+        return attn_output
+        
     def attention_layer(self, query, key_cache, value_cache, nheads, temperature, gumbel_softmax):
         if nheads == 1 :
                 query = query.unsqueeze(1)
@@ -207,7 +276,7 @@ class CBR_RNN(nn.Module):
                     key_cache = key_cache.to(query.device)
                 if query.device != value_cache.device:
                     value_cache = value_cache.to(query.device)
-                if temperature is None:  
+                if gumbel_softmax is False:  
                     try:
                         attn_output = scaled_dot_product_attention(
                             query, key_cache, value_cache, is_causal=False
@@ -220,7 +289,7 @@ class CBR_RNN(nn.Module):
                     query = query.squeeze(1).squeeze(1)
                 else:
                     try:
-                        attn_output = self.temperature_attention(
+                        attn_output = self.hard_attention_single_head(
                             query, key_cache, value_cache, temperature, is_causal=False
                         )
                     except Exception as e:
@@ -232,12 +301,18 @@ class CBR_RNN(nn.Module):
 
             
         else:
-            attn_output, _ = self.multihead_attn(
-                query, key_cache, value_cache, is_causal=False
-            )
-            attn = attn_output.squeeze(1)
-            del attn_output  # No longer needed after squeezing
-            query = query.squeeze(1)
+            if gumbel_softmax is False : 
+                attn_output, _ = self.multihead_attn(
+                    query, key_cache, value_cache, is_causal=False
+                )
+                attn = attn_output.squeeze(1)
+                del attn_output  # No longer needed after squeezing
+                query = query.squeeze(1)
+            else : 
+                attn_output = self.hard_attention_multi_head(query, key_cache, value_cache, nheads, temperature)
+                attn = attn_output.squeeze(1)
+                del attn_output  # No longer needed after squeezing
+                query = query.squeeze(1)
             
         return attn, query
     
@@ -261,10 +336,9 @@ class CBR_RNN(nn.Module):
         query = query.unsqueeze(1)
         return query
     
-    def forward(self, observation, initial_cache, nheads, temperature, gumbel_softmax, positional_encoding):
+    def forward(self, observation, initial_cache, nheads, temperature, gumbel_softmax):
         seq_len = observation.size(0)
         hidden, key_cache, value_cache = initial_cache
-
         # 1. Encode observations
         emb = self.drop(self.encoder(observation))
         # if positional_encoding:
@@ -278,7 +352,7 @@ class CBR_RNN(nn.Module):
             query = self.get_query(emb[i], hidden)
             
             attn, query = self.attention_layer(query, key_cache, value_cache, nheads, temperature, gumbel_softmax)
-
+            
             key_cache_i, value_cache_i, hidden_i = self.intermediate_layers(i, emb, query, attn, hidden)
             
             key_cache, value_cache, hidden = self.update_cache(key_cache, value_cache, hidden, key_cache_i, value_cache_i, hidden_i, nheads)
@@ -288,6 +362,7 @@ class CBR_RNN(nn.Module):
         decoded = self.decoder(hidden[1:])
 
         return decoded, hidden
+
 
 class Stack_LSTM(nn.Module):
     

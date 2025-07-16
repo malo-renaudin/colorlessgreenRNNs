@@ -13,7 +13,7 @@ from pathlib import Path
 from tqdm import tqdm
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = m.CBR_RNN(50001, 1024, 1024, 1, 0, device)
+model = m.CBR_RNN(50001, 1024, 1024, 1, 0, 0.5, device)
 data_path = "/scratch2/mrenaudin/colorlessgreenRNNs/english_data"
 dictionary = Dictionary(data_path)
 nounpp = "//scratch2/mrenaudin/colorlessgreenRNNs/NounPP/Stimuli/nounpp.txt"

@@ -297,4 +297,4 @@ if __name__ == "__main__":
     main()
 
 # to run on cpu : directly copy paste this in terminal
-# python /scratch2/mrenaudin/colorlessgreenRNNs/evaluation_notebooks/evaluate_lstm_on_blimp.py --emsize 650 --nhid 650 --checkpoint_dir '/scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/lstm_adam_full_check' --output_name 'lstm_adam_full_check_blimp'
+# python /scratch2/mrenaudin/colorlessgreenRNNs/evaluation_notebooks/evaluate_lstm_on_blimp.py --emsize 650 --nhid 650 --checkpoint_dir '/scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/lstm_adam_full_check_shuffled' --output_name 'lstm_adam_full_check_shuffled_blimp'

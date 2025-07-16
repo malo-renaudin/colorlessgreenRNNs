@@ -146,3 +146,9 @@ lm_parser.add_argument(
     default=0.1,
     help="minimum temperature for the gumbel softmax"
 )
+lm_parser.add_argument(
+    '--checkpoint_dir',
+    type=str,
+    default = 'checkpoints',
+    help='directory in which the checkpoints are saved'
+)

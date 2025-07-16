@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=gs_1024_1_0001# Job name
+#SBATCH --job-name=test_multihead_gs# Job name
 #SBATCH --partition=gpu 
 #SBATCH --export=ALL 
 #SBATCH --cpus-per-task=6        # Number of CPU cores per task (adjust as needed)
@@ -23,7 +23,7 @@ echo "CUDA_DEVICE: $CUDA_VISIBLE_DEVICES"
 
 
 #single head cbr rnn
-python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name gs_1024_1_0001 --classmodel 'CBR_RNN' --batch_size 512 --emsize 1024 --nhid 1024 --optimizer 'Adam' --epochs 40 --gumbel_softmax --min_temp 0.001 --cuda  #--checkpoint_path /scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/cbr_1h_512/epoch_15.pt --epoch_checkpointed 15
+python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name test_multihead_gs --classmodel 'CBR_RNN' --batch_size 512 --emsize 64 --nhid 64 --optimizer 'Adam' --epochs 2 --nheads 2 --gumbel_softmax --min_temp 0.001 --cuda  #--checkpoint_path /scratch2/mrenaudin/colorlessgreenRNNs/checkpoints/cbr_1h_512/epoch_15.pt --epoch_checkpointed 15
 #multi head cbr rnn
 #python src/language_models/main.py --data /scratch2/mrenaudin/colorlessgreenRNNs/english_data --name cbr8h128_shuffling --classmodel 'CBR_RNN' --batch_size 256 --nheads 8 --emsize 128 --nhid 128 --optimizer 'Adam' --cuda
 #3 heads cbr rnn
