@@ -30,13 +30,16 @@ from utils import (
     log_memory_usage,
     clear_memory,
     TemperatureScheduler,
-    pick_lt_st_indices
+    pick_lt_st_indices,
+    create_dataloaders
 )
 import torch.optim as optim
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
 import multiprocessing as mp
 from simple_data import TokenDataset, get_batch_iterators
+from torch.cuda.amp import autocast, GradScaler
+
 
 
 parser = argparse.ArgumentParser(
@@ -50,6 +53,8 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(), logging.FileHandler(args.log)],
 )
 logging.info(args)
+
+scaler = GradScaler() if args.cuda else None
 
 # Set the random seed manually for reproducibility.
 torch.manual_seed(args.seed)
@@ -71,7 +76,7 @@ logging.info("Loading data")
 start = time.time()
 
 # # Old way to load data (from colorlessgreenRNNs)
-corpus = Corpus(args.data)
+corpus = Corpus(args.data, save_tokenized=False)
 logging.info("( %.2f )" % (time.time() - start))
 ntokens = len(corpus.dictionary)
 logging.info("Vocab size %d", ntokens)
@@ -80,10 +85,11 @@ logging.info("Vocab size %d", ntokens)
 logging.info("Preparing batches...")
 eval_batch_size = 10
 
-# Use regular batchify for all data
+# # Use regular batchify for all data
 train_data = batchify(corpus.train, args.batch_size, device)
 val_data = batchify(corpus.valid, eval_batch_size, device)
 test_data = batchify(corpus.test, eval_batch_size, device)
+# train_data, val_data, test_data = create_dataloaders(corpus, args.bptt, args.batch_size, eval_batch_size)
 
 
                                   
@@ -114,6 +120,8 @@ model, optimizer_state_dict = load_model(
 
 logging.info(f"Built {args.classmodel}")
 
+if hasattr(torch, 'compile'):
+    model = torch.compile(model)
 ###############################################################################
 # Optimizer
 ###############################################################################
@@ -165,6 +173,8 @@ def evaluate(data_source, temperature):
         for i in range(0, data_source.size(0) - 1, args.bptt):
             data, targets = get_batch(data_source, i, args.bptt)
             data, targets = data.to(device), targets.to(device)
+        # for batch_idx, (data, targets) in enumerate(val_data):
+        #     data, targets = data.to(device, non_blocking=True), targets.to(device, non_blocking=True)
             
             if args.classmodel == "CBR_RNN":
                 cache = model.init_cache(data, args.nheads)
@@ -222,56 +232,60 @@ def train():
         logging.info(f"Checkpoint saved before the first batch: {epoch}, batch {0}")
 
     for batch, i in enumerate(range(0, train_data.size(0) - 1, args.bptt)):
-        
-        #temperature = temp_scheduler.get_temperature() if args.temp_scheduler or args.gumbel_softmax else None
-        #temperature= tau_scheduler.get_tau() if args.gumbel_softmax else None
-        # Get batch
         data, targets = get_batch(train_data, i, args.bptt)
         data, targets = data.to(device), targets.to(device)
-        optimizer.zero_grad()
+    # for batch_idx, (data, targets) in enumerate(train_data):
+    #     data, targets = data.to(device, non_blocking=True), targets.to(device, non_blocking=True)
+    #     optimizer.zero_grad()
         
-            # Forward pass on chunk
-        if args.classmodel == "CBR_RNN":
-            cache = model.init_cache(data, args.nheads)#for CBR_RNN, initialize cache once per batch as in the original code
-            output,_ = model(data, cache, args.nheads, temperature, args.gumbel_softmax)
-            
-            # Reshape outputs and targets
-            output_flat = output.reshape(-1, output.size(-1))
-            targets_flat = targets.reshape(-1)
-            
-            # Calculate loss
-            loss = criterion(output_flat, targets_flat)
-            del output, output_flat, targets_flat
-            
-        elif args.classmodel =='Stack_LSTM': 
-            hidden = repackage_hidden(hidden)
-            stack=stack.detach()
-            output, hidden, stack = model(data, hidden, stack)
-            loss = criterion(output.view(-1, ntokens), targets)
-            del output
-        elif args.classmodel == 'RNNModel' and args.model == 'LSTM':
-            hidden = repackage_hidden(hidden)
-            output, hidden = model(data, hidden)
-            loss_reg = hidden[1].abs().mean()
-            loss = criterion(output.view(-1, ntokens), targets) #+reg*loss_reg
-        # elif args.classmodel == 'RNNModel' and args.model == 'RNN':
-        #     hidden = repackage_hidden(hidden)
-        #     output,hidden = model(data,hidden)
-        #     if args.neuron_reg:
-        #         output
-            
-            del output
+        with autocast(enabled=args.cuda):
+                # Forward pass on chunk
+            if args.classmodel == "CBR_RNN":
+                cache = model.init_cache(data, args.nheads)#for CBR_RNN, initialize cache once per batch as in the original code
+                output,_ = model(data, cache, args.nheads, temperature, args.gumbel_softmax)
+                
+                # Reshape outputs and targets
+                output_flat = output.reshape(-1, output.size(-1))
+                targets_flat = targets.reshape(-1)
+                
+                # Calculate loss
+                loss = criterion(output_flat, targets_flat)
+                del output, output_flat, targets_flat
+                
+            elif args.classmodel =='Stack_LSTM': 
+                hidden = repackage_hidden(hidden)
+                stack=stack.detach()
+                output, hidden, stack = model(data, hidden, stack)
+                loss = criterion(output.view(-1, ntokens), targets)
+                del output
+            elif args.classmodel == 'RNNModel' and args.model == 'LSTM':
+                hidden = repackage_hidden(hidden)
+                output, hidden = model(data, hidden)
+                loss_reg = hidden[1].abs().mean()
+                loss = criterion(output.view(-1, ntokens), targets) #+reg*loss_reg
+            # elif args.classmodel == 'RNNModel' and args.model == 'RNN':
+            #     hidden = repackage_hidden(hidden)
+            #     output,hidden = model(data,hidden)
+            #     if args.neuron_reg:
+            #         output
+        scaler.scale(loss).backward()
+        scaler.unscale_(optimizer)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
+        scaler.step(optimizer)
+        scaler.update()
+                
+                # del output
 
        
-        loss.backward()
+        # loss.backward()
 
-        torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
+        # torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
 
-        optimizer.step()   
-        # if args.temp_scheduler or args.gumbel_softmax :
-        #     temp_scheduler.step() 
-        # elif args.gumbel_softmax:
-        #     tau_scheduler.step()
+        # optimizer.step()   
+        # # if args.temp_scheduler or args.gumbel_softmax :
+        # #     temp_scheduler.step() 
+        # # elif args.gumbel_softmax:
+        # #     tau_scheduler.step()
         total_loss += loss.item()
 
         # if epoch == 1 and batch <= 300 :  
@@ -281,13 +295,13 @@ def train():
             
         # Logging
         temp_str = f"{temperature:8.2f}" if temperature is not None else "   N/A  "
-        if batch % args.log_interval == 0 and batch > 0:
+        if batch % (args.log_interval*4) == 0 and batch > 0:
             cur_loss = total_loss / args.log_interval
             elapsed = time.time() - start_time
-            logging.info('| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.2f} | ms/batch {:5.2f} | '
+            logging.info('| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.3f} | ms/batch {:5.2f} | '
                     'loss {:5.2f} | ppl {:8.2f}| temp {}'.format(
                 epoch, batch, len(train_data) // args.bptt, lr,
-                elapsed * 1000 / args.log_interval, cur_loss, math.exp(cur_loss), temp_str))
+                elapsed * 1000 / args.log_interval*4, cur_loss, math.exp(cur_loss), temp_str))
             total_loss = 0
             start_time = time.time()
             clear_memory()
@@ -346,19 +360,19 @@ except KeyboardInterrupt:
 # val_loss_df.to_csv('val_loss.csv', index=False)
 
 # Load the best saved model.
-load_start_time = time.time()
-with open(args.save, "rb") as f:
-    model = torch.load(f)
-logging.info(f"Time to load best model: {time.time() - load_start_time:.2f}s")
+# load_start_time = time.time()
+# with open(args.save, "rb") as f:
+#     model = torch.load(f)
+# logging.info(f"Time to load best model: {time.time() - load_start_time:.2f}s")
 
-# Run on test data
-test_start_time = time.time()
-test_loss = evaluate(test_data)
-logging.info("=" * 89)
-logging.info(
-    "| End of training | test loss {:5.2f} | test ppl {:8.2f}".format(
-        test_loss, math.exp(test_loss)
-    )
-)
-logging.info(f"Time to evaluate on test data: {time.time() - test_start_time:.2f}s")
-logging.info("=" * 89)
+# # Run on test data
+# test_start_time = time.time()
+# test_loss = evaluate(test_data)
+# logging.info("=" * 89)
+# logging.info(
+#     "| End of training | test loss {:5.2f} | test ppl {:8.2f}".format(
+#         test_loss, math.exp(test_loss)
+#     )
+# )
+# logging.info(f"Time to evaluate on test data: {time.time() - test_start_time:.2f}s")
+# logging.info("=" * 89)

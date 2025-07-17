@@ -37,21 +37,15 @@ def compute_seq_nll(data, model, cache, nheads, temperature, gumbel):
     sequence_nll = masked_nll_loss.sum(dim=1)
     return -sequence_nll
  
-def eval_one_task(checkpoint, 
-                  test_dataloader, 
+def eval_one_task(model, 
                   data_path, 
                   blimp_task, 
                   batch_size, 
-                  model, 
                   gumbel, 
                   nheads, 
                   temperature, 
-                  hidden_dim, 
-                  device):
+                  ):
     
-    model = m.CBR_RNN(50001, hidden_dim, hidden_dim, nheads, 0, 0.5, device)
-    model.load_state_dict(checkpoint['model_state_dict'])
-    model.eval()
     
     dictionary = Dictionary(data_path)
     blimp = BLiMPDataset(blimp_task, dictionary)
@@ -83,16 +77,16 @@ def eval_one_task(checkpoint,
     return accuracy
 
 def eval_all_blimp(checkpoint, 
-                  test_dataloader, 
                   data_path, 
-                  blimp_task, 
-                  batch_size, 
-                  model, 
                   gumbel, 
-                  nheads, 
-                  temperature, 
+                  nheads,
+                  temperature,
                   hidden_dim, 
                   device):
+    
+    model = m.CBR_RNN(50001, hidden_dim, hidden_dim, nheads, 0, 0.5, device)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    model.eval()
     
     checkpoint_results = {}
     
@@ -166,16 +160,13 @@ def eval_all_blimp(checkpoint,
     ]
     
     for task in blimp_tasks:
-        checkpoint_results[task]= eval_one_task(checkpoint, 
-                                                test_dataloader, 
+        checkpoint_results[task]= eval_one_task(model, 
                                                 data_path, 
                                                 task, 
-                                                batch_size, 
-                                                model, 
+                                                512, 
                                                 gumbel, 
                                                 nheads, 
-                                                temperature, 
-                                                hidden_dim, 
-                                                device)
+                                                temperature
+                                                )
     return checkpoint_results
         

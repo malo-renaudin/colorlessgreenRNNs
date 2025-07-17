@@ -33,6 +33,9 @@ def main():
     parser.add_argument('--nounpp', type=str, default = '/scratch2/mrenaudin/colorlessgreenRNNs/NounPP/Stimuli/nounpp.txt',
                        help = 'Path to NounPP dataset')
     parser.add_argument('--output_dir', required=True, help='Output directory for results')
+    parser.add_argument('--cuda', action='store_true')
+    parser.add_argument('--cat_or_rand', type=str, default='cat', help='categorized or random test set for repeat surprisal')
+    parser.add_argument('--sce', type=int, default=1, help='scenarion number for repeat sur^risal test set')
     
     args = parser.parse_args()
     
@@ -63,7 +66,6 @@ def main():
             args.data_path, 
             args.nounpp, 
             device, 
-            args.output_dir
         )
         
         # BLiMP evaluation
@@ -75,18 +77,18 @@ def main():
             temperature, 
             args.hidden_dim, 
             device,
-            args.output_dir
         )
         
         # Repeat surprisal evaluation
         all_results['repeat'] = eval_repeat_surprisal(
             checkpoint, 
             args.data_path,
+            args.cat_or_rand,
+            args.sce,
             args.nheads,
             args.gumbel,
             args.hidden_dim,
             device,
-            args.output_dir
         )
         
         # Save combined results summary

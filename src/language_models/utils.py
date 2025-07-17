@@ -16,6 +16,8 @@ import numpy as np
 import random
 import torch.nn as nn
 import math
+from torch.utils.data import Dataset, DataLoader
+
 
 def repackage_hidden(h):
     """Detaches hidden states from their history."""
@@ -45,6 +47,74 @@ def batchify(data, bsz, device):
     #     #data = data.cuda()
     data = data.to(device)
     return data
+
+class BPTTDataset(Dataset):
+    def __init__(self, data, bptt):
+        self.data = data  # Keep on CPU initially
+        self.bptt = bptt
+        
+    def __len__(self):
+        return max(1, (len(self.data) - 1) // self.bptt)
+    
+    def __getitem__(self, idx):
+        i = idx * self.bptt
+        seq_len = min(self.bptt, len(self.data) - 1 - i)
+        
+        # Return consecutive tokens (classic language modeling)
+        data = self.data[i:i + seq_len]
+        target = self.data[i + 1:i + 1 + seq_len]
+        
+        return data, target
+
+def collate_fn(batch):
+    """Custom collate function to handle variable sequence lengths"""
+    # batch is a list of (data, target) tuples
+    data_list, target_list = zip(*batch)
+    
+    # Stack into batches - shape: (batch_size, seq_len)
+    data_batch = torch.stack(data_list, dim=1)
+    target_batch = torch.stack(target_list, dim=1)
+    
+    return data_batch, target_batch
+
+# Create dataloaders with proper batching
+def create_dataloaders(corpus, bptt, batch_size, eval_batch_size):
+    eval_batch_size = 10
+    
+    # Create datasets
+    train_dataset = BPTTDataset(corpus.train, bptt)
+    val_dataset = BPTTDataset(corpus.valid, bptt)
+    test_dataset = BPTTDataset(corpus.test, bptt)
+    
+    # Create dataloaders - NOW with proper batch_size
+    train_loader = DataLoader(
+        train_dataset, 
+        batch_size=batch_size,  # Real batch size here
+        shuffle=True,
+        num_workers=4,
+        pin_memory=True,
+        collate_fn=collate_fn
+    )
+    
+    val_loader = DataLoader(
+        val_dataset, 
+        batch_size=eval_batch_size,
+        shuffle=False,
+        num_workers=4,
+        pin_memory=True,
+        collate_fn=collate_fn
+    )
+    
+    test_loader = DataLoader(
+        test_dataset, 
+        batch_size=eval_batch_size,
+        shuffle=False,
+        num_workers=4,
+        pin_memory=True,
+        collate_fn=collate_fn
+    )
+    
+    return train_loader, val_loader, test_loader
 
 
 def shuffled_batchify(data, bsz, device):
