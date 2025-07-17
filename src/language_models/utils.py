@@ -126,6 +126,7 @@ def load_model(
     bptt
 ):
     import model as m
+    import torch.nn as nn
 
     if classmodel == "RNNModel":
         model = m.RNNModel(model, ntokens, emsize, nhid, nlayers, dropout, tied)
@@ -135,6 +136,9 @@ def load_model(
         
     elif classmodel == 'Stack_LSTM':
         model = m.Stack_LSTM(ntokens, emsize, nhid, device, nlayers, memory_size, memory_dim)
+    
+    # elif classmodel =='Transformer':
+    #     model = nn.Transformer()
         
 
     optimizer_state_dict = None

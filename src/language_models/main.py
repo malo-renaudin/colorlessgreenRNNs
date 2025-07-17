@@ -168,7 +168,7 @@ def evaluate(data_source, temperature):
             
             if args.classmodel == "CBR_RNN":
                 cache = model.init_cache(data, args.nheads)
-                output, hidden = model(data, cache, args.nheads, temperature, args.gumbel_softmax, args.positional_encoding)
+                output, hidden = model(data, cache, args.nheads, temperature, args.gumbel_softmax)
                 output_flat = output.reshape(-1, output.size(-1))
                 targets_flat = targets.reshape(-1)
                 total_loss += (

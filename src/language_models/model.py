@@ -70,7 +70,6 @@ class RNNModel(nn.Module):
         emb = self.drop(self.encoder(input))
         output, hidden = self.rnn(emb, hidden)
         output = self.drop(output)
-        # print(output)
         decoded = self.decoder(
             output.view(output.size(0) * output.size(1), output.size(2))
         )
@@ -244,8 +243,6 @@ class CBR_RNN(nn.Module):
         # Compute attention weights for all heads
         # query: (batch_size, num_heads, seq_len, head_dim)
         # key: (batch_size, num_heads, seq_len, head_dim)
-        print(query.shape)
-        print(key.shape)
         attn_weight = query @ key.transpose(-2, -1) * scale_factor
         attn_weight += attn_bias.unsqueeze(0).unsqueeze(0)  # Broadcast to all heads
         
