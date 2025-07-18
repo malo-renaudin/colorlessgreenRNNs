@@ -5,7 +5,6 @@
 #SBATCH --array=1-54
 #SBATCH --time=48:00:00  
 #SBATCH --partition=gpu
-#SBATCH --cpus-per-task=12
 #SBATCH --gres=gpu:1
 #SBATCH --constraint=h100
 #SBATCH --account=ywa@h100
