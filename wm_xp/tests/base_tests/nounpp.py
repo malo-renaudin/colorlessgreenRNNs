@@ -22,6 +22,7 @@ def eval_nounpp(checkpoint, temperature, hidden_dim, nheads, data_path, nounpp, 
     test_dataloader = DataLoader(test_dataset, batch_size=1024, collate_fn=collate_fn_nounpp)
     
     model = m.CBR_RNN(50001, hidden_dim, hidden_dim, nheads, 0.5, device)
+    model=model.to(device)
     model.load_state_dict(checkpoint['model_state_dict'])
     
     condition_accuracies = defaultdict(int)
@@ -39,7 +40,7 @@ def eval_nounpp(checkpoint, temperature, hidden_dim, nheads, data_path, nounpp, 
             condition = batch["condition"]
             batch_size = sentence.size(0)
 
-            sent = sentence[:, :5].transpose(0, 1)
+            sent = sentence[:, :5].transpose(0, 1).to(device)
             cache = model.init_cache(sent,1)  # regarder si on peut mettre du priming
             # for i in range(sent.shape[1]):
             out, cache = model(sent, cache, 1, temperature, True)

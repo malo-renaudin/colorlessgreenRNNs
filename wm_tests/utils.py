@@ -300,7 +300,7 @@ def collate_fn(batch):
         "marker": marker
     }
 
-def eval(model, dataloader, nheads, temperature, gs):
+def eval(model, dataloader, nheads, temperature, gs, device):
     all_repeat_surprisals = {}
     model.eval()
     # Forward pass with hidden state update word by word
@@ -312,8 +312,8 @@ def eval(model, dataloader, nheads, temperature, gs):
             condition = batch["condition"]
             marker = batch["marker"]
             batch_size, seq_len = encoded_sentence.shape
-            input_seq = encoded_sentence[:, :-1].transpose(0, 1)  # (seq_len-1, batch_size)
-            target_seq = encoded_sentence[:, 1:].transpose(0, 1)
+            input_seq = encoded_sentence[:, :-1].transpose(0, 1).to(device)  # (seq_len-1, batch_size)
+            target_seq = encoded_sentence[:, 1:].transpose(0, 1).to(device)
             cache = model.init_cache(input_seq, 1)
             output, hidden = model(input_seq, cache, nheads, temperature, gs)
             log_probs = F.log_softmax(output, dim=-1)  # shape (seq_len-1, batch_size, vocab_size)

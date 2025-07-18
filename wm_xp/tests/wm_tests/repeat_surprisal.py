@@ -39,7 +39,7 @@ def load_test(cat_or_rand, sce, batch_size, dictionary, test_types):
     prefix = prefix_map[cat_or_rand]
     
     dataloaders = {
-        f'{cat_or_rand}_s{sce}_{test_type}_dataloader': create_dataloader(base_path, f'{prefix}_{test_type}', dictionary)
+        f'{cat_or_rand}_s{sce}_{test_type}_dataloader': create_dataloader(base_path, f'{prefix}_{test_type}',230, dictionary)
         for test_type in test_types
     }
     
@@ -49,7 +49,6 @@ def eval_repeat_surprisal(checkpoint,
          data_path,
          cat_or_rand,
          sce,
-         model,
          nheads,
          gumbel,
          hidden_dim,
@@ -63,16 +62,17 @@ def eval_repeat_surprisal(checkpoint,
     dictionary = Dictionary(data_path)
 
     model = m.CBR_RNN(50001, hidden_dim, hidden_dim, nheads, 0.5, device)
+    model=model.to(device)
     model.load_state_dict(checkpoint['model_state_dict'])
 
     test_types = ['control', 'permute', 'repeat']
 
     dataloaders = load_test(cat_or_rand, sce, batch_size, dictionary, test_types)
     temperature = checkpoint['temperature']
-    
     for type in test_types:
-        dataloader = dataloaders[type]
-        res[type]= eval(model, dataloader, nheads, temperature, gumbel)
+
+        dataloader = dataloaders[f'{cat_or_rand}_s{sce}_{type}_dataloader']
+        res[type]= eval(model, dataloader, nheads, temperature, gumbel,device)
 
     return res 
 

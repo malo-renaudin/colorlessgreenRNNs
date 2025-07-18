@@ -227,7 +227,7 @@ def main():
         print(f"\n❌ Could not find {bash_script}")
         print("Please update the bash_script variable in this questionnaire to match your script location.")
         print("Looking for these possible scripts:")
-        possible_scripts = ["main.sh", "wm_xp/main.sh", "submit_experiment.sh", "simple_submit_script.sh"]
+        possible_scripts = ["main.sh", "wm_xp/main.sh", "gs_eval.sh", "wm_xp/gs_eval.sh"]
         for script in possible_scripts:
             if os.path.exists(script):
                 print(f"  ✓ Found: {script}")

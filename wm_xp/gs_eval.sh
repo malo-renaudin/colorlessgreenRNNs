@@ -2,12 +2,19 @@
 #SBATCH --job-name=grid_search_eval
 #SBATCH --output=logs/grid_%A_%a.out
 #SBATCH --error=logs/grid_%A_%a.err
-#SBATCH --array=1-2 # 3 total jobs, max 1 concurrent
-#SBATCH --time=24:00:00  # Increased time for training + evaluation
+#SBATCH --array=1-54
+#SBATCH --time=48:00:00  
 #SBATCH --partition=gpu
+#SBATCH --cpus-per-task=12
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=6
-#SBATCH --mem=32G
+#SBATCH --constraint=h100
+#SBATCH --account=ywa@h100
+#SBATCH --hint=nomultithread
+#SBATCH --partition=gpu_p6
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=malorenaudin1@gmail.com
+#SBATCH —cpus-per-task=24
+
 
 # Parse command line arguments
 CONFIG_FILE="$1"
@@ -15,12 +22,13 @@ OUTPUT_BASE_DIR="$2"
 EVAL_SCRIPT_PATH="$3"  # Path to your evaluation script
 
 # Load necessary modules
-module load miniconda3/24.3.0
-module load python/3.9.18-lpwk
-module load cuda/11.8.0-r465
-source ~/.bashrc
-conda activate leaps3
+# module load miniconda3/24.3.0
+# module load python/3.9.18-lpwk
+# module load cuda/11.8.0-r465
+# source ~/.bashrc
 
+# conda activate leaps3
+source cgr/bin/activate
 # Create output directories
 mkdir -p "$OUTPUT_BASE_DIR"
 
@@ -65,7 +73,7 @@ python src/language_models/main.py \
     --min_temp "$temperature" \
     $gumbel_flag \
     --optimizer 'Adam' \
-    --epochs 1 \
+    --epochs 40 \
     --cuda \
     --checkpoint_dir "$JOB_OUTPUT_DIR"
 
@@ -79,7 +87,7 @@ echo "=== TRAINING COMPLETED ==="
 echo "=== STARTING EVALUATION ==="
 
 # Find the checkpoint file
-CHECKPOINT_PATH="${JOB_OUTPUT_DIR}/${exp_name}/epoch_1.pt"
+CHECKPOINT_PATH="${JOB_OUTPUT_DIR}/${exp_name}/epoch_40.pt"
 
 if [ ! -f "$CHECKPOINT_PATH" ]; then
     echo "Error: Checkpoint file not found at $CHECKPOINT_PATH"
