@@ -13,7 +13,7 @@
 #SBATCH --partition=gpu_p6
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=malorenaudin1@gmail.com
-#SBATCH —cpus-per-task=24
+#SBATCH —-cpus-per-task=24
 
 
 # Parse command line arguments
