@@ -5,7 +5,7 @@
 #SBATCH --cpus-per-task=6        # Number of CPU cores per task (adjust as needed)
 #SBATCH --gres=gpu:1             # Request 1 GPU
 #SBATCH --mem=32G                # Request 32GB of memory (adjust as needed)
-#SBATCH --time=48:00:00          # Maximum job runtime (adjust as needed)
+#SBATCH --time=2:00:00          # Maximum job runtime (adjust as needed)
 #SBATCH --output=log/%x-%j.log
 
 module load miniconda3/24.3.0
