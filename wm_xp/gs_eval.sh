@@ -3,7 +3,7 @@
 #SBATCH --output=logs/grid_%A_%a.out
 #SBATCH --error=logs/grid_%A_%a.err
 #SBATCH --array=1-54
-#SBATCH --time=24:00:00  
+#SBATCH --time=20:00:00  
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=24
 #SBATCH --constraint=h100
@@ -12,6 +12,7 @@
 #SBATCH --partition=gpu_p6
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=malorenaudin1@gmail.com
+#SBATCH --qos=qos_gpu_h100-t3
 
 
 
