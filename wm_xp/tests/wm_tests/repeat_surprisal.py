@@ -1,7 +1,7 @@
 import sys
 import os
 
-sys.path.append('/scratch2/mrenaudin/colorlessgreenRNNs')
+sys.path.append('colorlessgreenRNNs')
 
 import torch
 from torch.utils.data import Dataset, DataLoader
@@ -25,7 +25,7 @@ def create_dataloader(base_path, file_suffix, batch_size, dictionary):
 
 def load_test(cat_or_rand, sce, batch_size, dictionary, test_types):
 
-    base_path = '/scratch2/mrenaudin/colorlessgreenRNNs/wm_tests/rnn_input_files'
+    base_path = 'colorlessgreenRNNs/wm_tests/rnn_input_files'
         
     
     prefix_map = {
@@ -58,7 +58,7 @@ def eval_repeat_surprisal(checkpoint,
     
     res = {}
 
-    data_path = "/scratch2/mrenaudin/colorlessgreenRNNs/english_data"
+    data_path = "colorlessgreenRNNs/english_data"
     dictionary = Dictionary(data_path)
 
     model = m.CBR_RNN(50001, hidden_dim, hidden_dim, nheads, 0.5, device)

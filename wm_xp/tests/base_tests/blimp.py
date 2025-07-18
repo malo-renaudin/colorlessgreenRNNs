@@ -1,7 +1,7 @@
 import sys
 import os
 
-sys.path.append('/scratch2/mrenaudin/colorlessgreenRNNs')
+sys.path.append('colorlessgreenRNNs')
 
 from src.language_models import model as m
 import torch

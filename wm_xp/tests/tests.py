@@ -1,7 +1,7 @@
 import sys
 import os
 
-sys.path.append('/scratch2/mrenaudin/colorlessgreenRNNs')
+sys.path.append('colorlessgreenRNNs')
 
 from src.language_models import model as m
 import torch
@@ -30,7 +30,7 @@ def main():
     parser.add_argument('--hidden_dim', type=int)
     parser.add_argument('--nheads', type=int)
     parser.add_argument('--gumbel', action='store_true')
-    parser.add_argument('--nounpp', type=str, default = '/scratch2/mrenaudin/colorlessgreenRNNs/NounPP/Stimuli/nounpp.txt',
+    parser.add_argument('--nounpp', type=str, default = 'colorlessgreenRNNs/NounPP/Stimuli/nounpp.txt',
                        help = 'Path to NounPP dataset')
     parser.add_argument('--output_dir', required=True, help='Output directory for results')
     parser.add_argument('--cuda', action='store_true')
