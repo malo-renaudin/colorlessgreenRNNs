@@ -3,7 +3,7 @@
 #SBATCH --output=logs/grid_%A_%a.out
 #SBATCH --error=logs/grid_%A_%a.err
 #SBATCH --array=1-54
-#SBATCH --time=48:00:00  
+#SBATCH --time=24:00:00  
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=24
 #SBATCH --constraint=h100
