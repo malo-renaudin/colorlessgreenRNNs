@@ -32,16 +32,16 @@ echo "Gumbel options: $GUMBEL_OPTIONS"
 echo "Running experiment setup..."
 
 # Run the experiment runner with proper argument format for xp_parser
-python colorlessgreenRNNs/wm_xp/runner.py \
+python wm_xp/runner.py \
     --name "$EXPERIMENT_NAME" \
-    --data colorlessgreenRNNs/english_data \
+    --data english_data \
     --hidden_dims $HIDDEN_DIMS \
     --num_heads $NUM_HEADS \
     --temperatures $TEMPERATURES \
     --gumbel_softmax $GUMBEL_OPTIONS \
-    --grid_search_script colorlessgreenRNNs/wm_xp/gs_eval.sh \
-    --eval_script colorlessgreenRNNs/wm_xp/tests/tests.py \
-    --nounpp colorlessgreenRNNs/NounPP/Stimuli/nounpp.txt \
+    --grid_search_script wm_xp/gs_eval.sh \
+    --eval_script wm_xp/tests/tests.py \
+    --nounpp NounPP/Stimuli/nounpp.txt \
     --cuda
 
 if [ $? -eq 0 ]; then

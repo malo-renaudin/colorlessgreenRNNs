@@ -63,7 +63,7 @@ echo "Output directory: $JOB_OUTPUT_DIR"
 
 # Run training
 python src/language_models/main.py \
-    --data colorlessgreenRNNs/english_data \
+    --data english_data \
     --name "$exp_name" \
     --classmodel 'CBR_RNN' \
     --batch_size 512 \
@@ -102,12 +102,12 @@ mkdir -p "$EVAL_OUTPUT_DIR"
 echo "Running comprehensive evaluation (NounPP + BLiMP + Repeat Surprisal)..."
 python "$EVAL_SCRIPT_PATH" \
     --checkpoint "$CHECKPOINT_PATH" \
-    --data_path colorlessgreenRNNs/english_data \
+    --data_path english_data \
     --hidden_dim "$hidden_dim" \
     --nheads "$num_heads" \
     $gumbel_eval_flag \
     --output_dir "$EVAL_OUTPUT_DIR" \
-    --nounpp colorlessgreenRNNs/NounPP/Stimuli/nounpp.txt\
+    --nounpp NounPP/Stimuli/nounpp.txt\
     --cuda
 
 if [ $? -eq 0 ]; then
