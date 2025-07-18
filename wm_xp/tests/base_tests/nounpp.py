@@ -21,7 +21,7 @@ def eval_nounpp(checkpoint, temperature, hidden_dim, nheads, data_path, nounpp, 
     test_dataset = NounPPDataset(nounpp, dictionary)
     test_dataloader = DataLoader(test_dataset, batch_size=1024, collate_fn=collate_fn_nounpp)
     
-    model = m.CBR_RNN(50001, hidden_dim, hidden_dim, nheads, 0, device)
+    model = m.CBR_RNN(50001, hidden_dim, hidden_dim, nheads, 0.5, device)
     model.load_state_dict(checkpoint['model_state_dict'])
     
     condition_accuracies = defaultdict(int)

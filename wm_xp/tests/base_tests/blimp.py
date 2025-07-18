@@ -84,7 +84,7 @@ def eval_all_blimp(checkpoint,
                   hidden_dim, 
                   device):
     
-    model = m.CBR_RNN(50001, hidden_dim, hidden_dim, nheads, 0, 0.5, device)
+    model = m.CBR_RNN(50001, hidden_dim, hidden_dim, nheads, 0.5, device)
     model.load_state_dict(checkpoint['model_state_dict'])
     model.eval()
     

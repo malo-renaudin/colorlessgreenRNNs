@@ -144,24 +144,31 @@ def shuffled_batchify(data, bsz, device):
 # inclure batch index en argument ici comme ça on désengorge script principal
 def save_checkpoint(model, optimizer, experiment_name, epoch, temperature, checkpoint_dir, batch=None):
     """Save model checkpoint."""
-    #checkpoint_dir = "checkpoints"
-
     # Create a subfolder for the experiment within the checkpoints directory
     experiment_dir = os.path.join(checkpoint_dir, experiment_name)
     os.makedirs(experiment_dir, exist_ok=True)
-    # if batch is None or batch % 10 == 0:
-
+    
     if batch is None:
         filename = f"{experiment_dir}/epoch_{epoch}.pt"
     else:
         filename = f"{experiment_dir}/epoch_{epoch}_batch_{batch}.pt"
     
+    # Handle torch.compile() or DataParallel wrapper
+    if hasattr(model, '_orig_mod'):
+        # Save the original unwrapped model state
+        model_state_dict = model._orig_mod.state_dict()
+        logging.info("Saving unwrapped model state (removing _orig_mod prefix)")
+    else:
+        # Regular save
+        model_state_dict = model.state_dict()
+    
     checkpoint = {
         "epoch": epoch,
-        "model_state_dict": model.state_dict(),
+        "model_state_dict": model_state_dict,
         "optimizer_state_dict": optimizer.state_dict(),
         "temperature": temperature
     }
+    
     torch.save(checkpoint, filename)
     logging.info(f"Checkpoint saved: {filename}")
 
@@ -202,7 +209,7 @@ def load_model(
         model = m.RNNModel(model, ntokens, emsize, nhid, nlayers, dropout, tied)
 
     elif classmodel == "CBR_RNN":
-        model = m.CBR_RNN(ntokens, emsize, nhid, nheads, bptt, dropout, device)
+        model = m.CBR_RNN(ntokens, emsize, nhid, nheads, dropout, device)
         
     elif classmodel == 'Stack_LSTM':
         model = m.Stack_LSTM(ntokens, emsize, nhid, device, nlayers, memory_size, memory_dim)

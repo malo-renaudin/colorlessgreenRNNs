@@ -91,7 +91,7 @@ class CBR_RNN(nn.Module):
     # goal here is to reuse CBR_RNN but with scaled dot product attention for more efficient computations.
     # Also I got rid of options such as loading pretrained embeddings, and ablating attention to simplify the code.
     # In the future if those options are needed, they can still be copy pasted from William's code as the structure hasn't changed
-    def __init__(self, ntoken, ninp, nhid, nheads, bptt, dropout=0.5, device=None):
+    def __init__(self, ntoken, ninp, nhid, nheads, dropout=0.5, device=None):
         super().__init__()
         # same layers as Timkey
         self.device = device
