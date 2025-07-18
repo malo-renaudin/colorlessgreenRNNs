@@ -4,15 +4,15 @@
 #SBATCH --error=logs/grid_%A_%a.err
 #SBATCH --array=1-54
 #SBATCH --time=48:00:00  
-#SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=24
 #SBATCH --constraint=h100
 #SBATCH --account=ywa@h100
 #SBATCH --hint=nomultithread
 #SBATCH --partition=gpu_p6
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=malorenaudin1@gmail.com
-#SBATCH —-cpus-per-task=24
+
 
 
 # Parse command line arguments
