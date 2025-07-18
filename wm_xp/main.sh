@@ -17,8 +17,7 @@ if [ -z "$EXPERIMENT_NAME" ] || [ -z "$HIDDEN_DIMS" ] || [ -z "$NUM_HEADS" ] || 
 fi
 
 # Load environment (adjust paths as needed)
-source ~/.bashrc
-conda activate leaps3
+source cgr/bin/activate
 
 # Create logs directory
 mkdir -p logs
