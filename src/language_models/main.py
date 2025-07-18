@@ -207,7 +207,7 @@ def evaluate(data_source, temperature):
     return total_loss / (len(data_source) - 1)
 
 # NEW : create folder for checkpointing
-main_folder = "/scratch2/mrenaudin/colorlessgreenRNNs/val_loss"
+main_folder = "val_loss"
 subfolder = os.path.join(main_folder, args.name)
 os.makedirs(subfolder, exist_ok=True)
 val_loss_data = []
