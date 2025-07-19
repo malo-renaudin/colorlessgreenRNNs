@@ -2,7 +2,7 @@
 #SBATCH --job-name=grid_search_eval
 #SBATCH --output=logs/grid_%A_%a.out
 #SBATCH --error=logs/grid_%A_%a.err
-#SBATCH --array=1-54
+#SBATCH --array=1-2
 #SBATCH --time=20:00:00  
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=24
@@ -26,6 +26,8 @@ EVAL_SCRIPT_PATH="$3"  # Path to your evaluation script
 # module load python/3.9.18-lpwk
 # module load cuda/11.8.0-r465
 # source ~/.bashrc
+
+module load python/3.9.12
 
 # conda activate leaps3
 source cgr/bin/activate
