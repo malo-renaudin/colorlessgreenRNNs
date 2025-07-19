@@ -29,6 +29,9 @@ EVAL_SCRIPT_PATH="$3"  # Path to your evaluation script
 
 module load python/3.9.12
 
+export TRITON_INTERPRET=1
+export TRITON_CACHE_DIR=$SCRATCH/triton_cache
+
 # conda activate leaps3
 source cgr/bin/activate
 # Create output directories
