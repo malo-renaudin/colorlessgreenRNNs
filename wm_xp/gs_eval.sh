@@ -28,10 +28,13 @@ EVAL_SCRIPT_PATH="$3"  # Path to your evaluation script
 # source ~/.bashrc
 
 module load python/3.9.12
+export TORCH_COMPILE=0
+export TORCH_DYNAMO_DISABLE=1
+export TORCHINDUCTOR_DISABLE=1
+export TRITON_DISABLE_LINE_INFO=1
 
-export TRITON_INTERPRET=1
 export TRITON_CACHE_DIR=$SCRATCH/triton_cache
-
+mkdir -p $TRITON_CACHE_DIR
 # conda activate leaps3
 source cgr/bin/activate
 # Create output directories
@@ -78,7 +81,7 @@ python src/language_models/main.py \
     --min_temp "$temperature" \
     $gumbel_flag \
     --optimizer 'Adam' \
-    --epochs 40 \
+    --epochs 10 \
     --cuda \
     --checkpoint_dir "$JOB_OUTPUT_DIR"
 
@@ -92,7 +95,7 @@ echo "=== TRAINING COMPLETED ==="
 echo "=== STARTING EVALUATION ==="
 
 # Find the checkpoint file
-CHECKPOINT_PATH="${JOB_OUTPUT_DIR}/${exp_name}/epoch_40.pt"
+CHECKPOINT_PATH="${JOB_OUTPUT_DIR}/${exp_name}/epoch_10.pt"
 
 if [ ! -f "$CHECKPOINT_PATH" ]; then
     echo "Error: Checkpoint file not found at $CHECKPOINT_PATH"
