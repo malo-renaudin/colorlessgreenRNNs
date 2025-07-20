@@ -27,16 +27,10 @@ EVAL_SCRIPT_PATH="$3"  # Path to your evaluation script
 # module load cuda/11.8.0-r465
 # source ~/.bashrc
 
-module load python/3.9.12
-export TORCH_COMPILE=0
-export TORCH_DYNAMO_DISABLE=1
-export TORCHINDUCTOR_DISABLE=1
-export TRITON_DISABLE_LINE_INFO=1
-
-export TRITON_CACHE_DIR=$SCRATCH/triton_cache
-mkdir -p $TRITON_CACHE_DIR
+#module load python/3.9.12
 # conda activate leaps3
-source cgr/bin/activate
+#source cgr/bin/activate
+conda activate pytorch-gpu-2.6.0+py3.12.8
 # Create output directories
 mkdir -p "$OUTPUT_BASE_DIR"
 
