@@ -10,12 +10,13 @@ from attention import MultiheadAttention
 class CBR_RNN(pl.LightningModule):
     def __init__(self, ntoken, ninp, nhid, nheads, dropout=0.5, learning_rate=1e-3, 
                  temperature=1.0, gumbel_softmax=False, criterion='cross_entropy',
-                 optimizer_type='adam', weight_decay=0.0, scheduler_type=None):
+                 optimizer_type='adam', weight_decay=0.0, scheduler_type=None, cache_strategy='epoch'):
         super().__init__()
         
         # Save hyperparameters for logging and checkpointing
         self.save_hyperparameters()
-        
+        self.cache_strategy = cache_strategy  # either "per_batch" or "per_epoch"
+        self.epoch_cache = None
         # Model architecture (your existing code)
         self.nheads = nheads
         self.tanh = nn.Tanh()
@@ -31,7 +32,7 @@ class CBR_RNN(pl.LightningModule):
         self.nhid = nhid
         self.final_h = nn.Linear(nhid * 4, nhid * 3)
         self.multihead_attn = MultiheadAttention(
-            embed_dim=nhid, num_heads=nheads, batch_first=True, tau = temperature, gumbel=gumbel_softmax
+            embed_dim=nhid, num_heads=nheads, batch_first=True
         )
         
         # Training hyperparameters
@@ -60,7 +61,7 @@ class CBR_RNN(pl.LightningModule):
             elif "bias" in name:
                 nn.init.zeros_(param)
 
-    def init_cache(self, observation, nheads):
+    def init_cache(self, observation):
         """Initialize hidden state and attention caches"""
         if len(observation.size()) > 1:
             bsz = observation.size(dim=-1)
@@ -68,38 +69,36 @@ class CBR_RNN(pl.LightningModule):
             bsz = 1
 
         hidden = torch.zeros(1, bsz, self.nhid).to(self.device) 
-        if nheads == 1:
-            key_cache = torch.zeros(bsz, 1, 1, self.nhid).to(self.device) 
-            value_cache = torch.zeros(bsz, 1, 1, self.nhid).to(self.device) 
-        elif nheads > 1:
-            key_cache = torch.zeros(bsz, 1, self.nhid).to(self.device) 
-            value_cache = torch.zeros(bsz, 1, self.nhid).to(self.device) 
+        key_cache = torch.zeros(bsz, 1, self.nhid).to(self.device) 
+        value_cache = torch.zeros(bsz, 1, self.nhid).to(self.device) 
         return hidden, key_cache, value_cache
 
-    def update_cache(self, key_cache, value_cache, hidden, key_cache_i, value_cache_i, hidden_i, nheads):
+    def update_cache(self, key_cache, value_cache, hidden, key_cache_i, value_cache_i, hidden_i):
         hidden_i = hidden_i.unsqueeze(0)
         hidden = torch.cat((hidden, hidden_i), dim=0)
-        if nheads == 1:
-            key_cache_i = key_cache_i.unsqueeze(1).unsqueeze(1)
-            value_cache_i = value_cache_i.unsqueeze(1).unsqueeze(1)
-            key_cache = torch.cat((key_cache, key_cache_i), dim=2)
-            value_cache = torch.cat((value_cache, value_cache_i), dim=2)
-        else:
-            key_cache_i = key_cache_i.unsqueeze(1)
-            value_cache_i = value_cache_i.unsqueeze(1)
-            key_cache = torch.cat((key_cache, key_cache_i), dim=1)
-            value_cache = torch.cat((value_cache, value_cache_i), dim=1)
+        key_cache_i = key_cache_i.unsqueeze(1)
+        value_cache_i = value_cache_i.unsqueeze(1)
+        key_cache = torch.cat((key_cache, key_cache_i), dim=1)
+        value_cache = torch.cat((value_cache, value_cache_i), dim=1)
             
         return key_cache, value_cache, hidden
 
     
 
     def intermediate_layers(self, i, emb, query, attn, hidden):
-        intermediate_input = torch.cat((emb[i], query, attn, hidden[-1]), -1)
+        print('ok')
+        print('emb[i]', emb[i].shape)
+        print('query', query.shape)
+        print('attn', attn.shape)
+        print('hidden[-1]', hidden[-1].shape)
+        intermediate_input = torch.cat((emb[i], query, attn, hidden[-1]), -1)#ici les dernières dimensions sont additionées
+        print('intermediate_input', intermediate_input.shape)
         intermediate = self.drop(
-            self.tanh(self.int_norm(self.intermediate_h(intermediate_input)))
+            self.tanh(self.int_norm(self.intermediate_h(intermediate_input)))#ici il faut que cette somme soit de 1024. Ca contraint ninp=nhid
         )
+        print('intermediat', intermediate.shape)
         final_output = self.drop(self.tanh(self.f_norm(self.final_h(intermediate))))
+        print('final_output', final_output.shape)
         key_cache_i, value_cache_i, hidden_i = final_output.split(self.nhid, dim=-1)
         return key_cache_i, value_cache_i, hidden_i
 
@@ -116,82 +115,143 @@ class CBR_RNN(pl.LightningModule):
         gumbel_softmax = gumbel_softmax if gumbel_softmax is not None else self.gumbel_softmax
         
         seq_len = observation.size(0)
-        
-        if initial_cache is None:
-            hidden, key_cache, value_cache = self.init_cache(observation, nheads)
-        else:
+    
+        if initial_cache is not None:
             hidden, key_cache, value_cache = initial_cache
+        else:
+            # Fallback to fresh cache if none provided
+            hidden, key_cache, value_cache = self.init_cache(observation)
             
+        print('hidden', hidden.shape)
+        print('key_cache', key_cache.shape)
+        print('value_cache', value_cache.shape)   
         emb = self.drop(self.encoder(observation))
-        
+        print('emb', emb.shape)
         for i in range(seq_len):
             query = self.get_query(emb[i], hidden)
-            attn, query = self.multihead_attn(query, key_cache, value_cache, nheads, temperature, gumbel_softmax)
-            key_cache_i, value_cache_i, hidden_i = self.intermediate_layers(i, emb, query, attn, hidden)
-            key_cache, value_cache, hidden = self.update_cache(key_cache, value_cache, hidden, key_cache_i, value_cache_i, hidden_i, nheads)
-
+            print('query', query.shape)
+            attn_output,_= self.multihead_attn(query, key_cache, value_cache, temperature, gumbel_softmax, need_weights=False)
+            attn_output, query=attn_output.squeeze(1), query.squeeze(1)
+            print('attn_output',attn_output.shape)
+            key_cache_i, value_cache_i, hidden_i = self.intermediate_layers(i, emb, query, attn_output, hidden)
+            print('key_cache_i',key_cache_i.shape)
+            print('value_cache_i',value_cache_i.shape)
+            print('hidden_i', hidden_i.shape)
+            key_cache, value_cache, hidden = self.update_cache(key_cache, value_cache, hidden, key_cache_i, value_cache_i, hidden_i)
+            print('key_cache',key_cache.shape)
+            print('value_cache',value_cache.shape)
+            print('hidden', hidden.shape)
         decoded = self.decoder(hidden[1:])
-        return decoded, hidden
-
+        print('decoded', decoded.shape)
+        return decoded, (hidden, key_cache, value_cache)
+    
+    def on_train_epoch_start(self):
+        """Reset cache at the start of each epoch"""
+        print(f"🔄 Starting new epoch - cache strategy: {self.cache_strategy}")
+        if self.cache_strategy == "epoch":
+            self.epoch_cache = None
+            print("✅ Epoch cache reset to None")
+            
+            
     def training_step(self, batch, batch_idx):
-        # Assumes batch is (input_seq, target_seq) or modify based on your data format
-        if isinstance(batch, (tuple, list)) and len(batch) == 2:
-            input_seq, target = batch
-        else:
-            # If your batch format is different, adjust accordingly
-            input_seq = batch[:-1]  # All but last token as input
-            target = batch[1:]      # All but first token as target
+        # Extract data and targets from batch
+        data, targets = batch
         
-        output, _ = self(input_seq)
+        if self.cache_strategy == "batch":
+            # Fresh cache for each batch
+            cache = self.init_cache(data)
+            print(f"📦 Batch {batch_idx}: Using fresh cache")
+            
+        elif self.cache_strategy == "epoch":
+            if self.epoch_cache is None:
+                # Initialize cache once per epoch
+                self.epoch_cache = self.init_cache(data)
+                print(f"🎯 Batch {batch_idx}: Initialized epoch cache")
+            else:
+                # Detach from computational graph but keep values
+                hidden, key_cache, value_cache = self.epoch_cache
+                self.epoch_cache = (
+                    hidden.detach(),
+                    key_cache.detach(), 
+                    value_cache.detach()
+                )
+                print(f"🔗 Batch {batch_idx}: Using persistent epoch cache (detached)")
+            
+            cache = self.epoch_cache
+        # Forward pass
+        output, new_cache = self.forward(
+            data, 
+            initial_cache=cache, 
+            nheads=self.nheads, 
+            temperature=self.temperature, 
+            gumbel_softmax=self.gumbel_softmax
+        )
+        if self.cache_strategy == "epoch":
+            self.epoch_cache = new_cache
+            cache_length = new_cache[1].size(1)  # key_cache sequence length
+            print(f"📈 Cache length after batch {batch_idx}: {cache_length}")
+        print('output', output.shape)
+        print('targets', targets.shape)
+        # Reshape outputs and targets for loss computation
+        output_flat = output.reshape(-1, output.size(-1))
+        targets_flat = targets.reshape(-1)
         
-        # Reshape for loss computation
+        # Calculate loss
         if self.criterion == 'cross_entropy':
-            output = output.view(-1, output.size(-1))
-            target = target.view(-1)
-            loss = F.cross_entropy(output, target)
-        elif self.criterion == 'mse':
-            loss = F.mse_loss(output, target)
+            loss = F.cross_entropy(output_flat, targets_flat)
         else:
-            raise ValueError(f"Unknown criterion: {self.criterion}")
+            raise ValueError(f"Unsupported criterion: {self.criterion}")
+        
+        # Calculate perplexity for logging
+        ppl = torch.exp(loss)
         
         # Log metrics
-        self.log('train_loss', loss, on_step=True, on_epoch=True, prog_bar=True)
+        self.log('train_loss', loss, prog_bar=True, on_step=True, on_epoch=True)
+        self.log('train_ppl', ppl, prog_bar=True, on_step=True, on_epoch=True)
+        self.log('temperature', self.temperature, on_step=True)
         
         return loss
-
+    
+    
     def validation_step(self, batch, batch_idx):
-        if isinstance(batch, (tuple, list)) and len(batch) == 2:
-            input_seq, target = batch
-        else:
-            input_seq = batch[:-1]
-            target = batch[1:]
+        """Validation step for PyTorch Lightning"""
+        # Extract data and targets from batch
+        data, targets = batch
         
-        output, _ = self(input_seq)
+        # Initialize cache for CBR_RNN
+        cache = self.init_cache(data)
         
+        # Forward pass
+        output, _ = self.forward(
+            data, 
+            initial_cache=cache, 
+            nheads=self.nheads, 
+            temperature=self.temperature, 
+            gumbel_softmax=self.gumbel_softmax
+        )
+        
+        # Reshape outputs and targets for loss computation
+        output_flat = output.reshape(-1, output.size(-1))
+        targets_flat = targets.reshape(-1)
+        
+        # Calculate loss
         if self.criterion == 'cross_entropy':
-            output = output.view(-1, output.size(-1))
-            target = target.view(-1)
-            loss = F.cross_entropy(output, target)
-            
-            # Calculate accuracy for classification
-            pred = torch.argmax(output, dim=-1)
-            acc = (pred == target).float().mean()
-            self.log('val_acc', acc, on_step=False, on_epoch=True, prog_bar=True)
-            
-        elif self.criterion == 'mse':
-            loss = F.mse_loss(output, target)
+            loss = F.cross_entropy(output_flat, targets_flat)
+        else:
+            raise ValueError(f"Unsupported criterion: {self.criterion}")
         
-        self.log('val_loss', loss, on_step=False, on_epoch=True, prog_bar=True)
+        # Calculate perplexity for logging
+        ppl = torch.exp(loss)
+        
+        # Log metrics
+        self.log('val_loss', loss, prog_bar=True, on_step=False, on_epoch=True)
+        self.log('val_ppl', ppl, prog_bar=True, on_step=False, on_epoch=True)
+        
         return loss
 
     def configure_optimizers(self):
-        if self.optimizer_type == 'adam':
-            optimizer = torch.optim.Adam(
-                self.parameters(), 
-                lr=self.learning_rate, 
-                weight_decay=self.weight_decay
-            )
-        elif self.optimizer_type == 'sgd':
+
+        if self.optimizer_type == 'sgd':
             optimizer = torch.optim.SGD(
                 self.parameters(), 
                 lr=self.learning_rate, 
