@@ -180,7 +180,7 @@ def prepare_wikitext_datasets(vocab_size=10000, sequence_length=128, max_val_sam
         print(f"Tokenizer saved to {tokenizer_path}")
     
     # Load and tokenize data
-    train_texts = load_wikitext_data('train', max_val_samples)
+    train_texts = load_wikitext_data('train')
     val_texts = load_wikitext_data('validation', max_val_samples)
     
     # Create token sequences

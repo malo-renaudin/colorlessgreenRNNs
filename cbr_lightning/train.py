@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Complete Training Script for CBR_RNN on WikiText-103
-with Sliding Window + Compression Cache Management
+with Compression Cache Management
 """
 
 import torch
@@ -118,14 +118,6 @@ def print_model_info(model, data_module):
     print(f"  Attention Heads: {model.hparams.nheads}")
     print(f"  Vocabulary Size: {model.hparams.ntoken}")
     
-    # Cache management info
-    # print(f"\nCache Management:")
-    # print(f"  Max Cache Length: {model.max_cache_length}")
-    # print(f"  Use Compression: {model.use_cache_compression}")
-    # if model.use_cache_compression:
-    #     print(f"  Compression Size: {model.compression_size}")
-    #     print(f"  Recent Window Size: {model.recent_window_size}")
-    # print(f"  Persistent Cache: {model.enable_persistent_cache}")
     
     # Gumbel Softmax info
     print(f"\nAttention Configuration:")
@@ -146,11 +138,11 @@ def main():
     parser = argparse.ArgumentParser(description='Train CBR_RNN on WikiText-103')
     
     # Data parameters
-    parser.add_argument('--vocab_size', type=int, default=20000, 
+    parser.add_argument('--vocab_size', type=int, default=50000, 
                        help='Vocabulary size')
-    parser.add_argument('--sequence_length', type=int, default=128, 
+    parser.add_argument('--sequence_length', type=int, default=64, 
                        help='Sequence length')
-    parser.add_argument('--batch_size', type=int, default=32, 
+    parser.add_argument('--batch_size', type=int, default=512, 
                        help='Batch size')
     parser.add_argument('--max_val_samples', type=int, default=2000, 
                        help='Limit validation samples for faster validation')
@@ -164,16 +156,7 @@ def main():
                        help='Number of attention heads')
     parser.add_argument('--dropout', type=float, default=0.1, 
                        help='Dropout rate')
-    
-    # Cache management parameters
-    # parser.add_argument('--max_cache_length', type=int, default=256,
-    #                    help='Maximum cache length (sliding window + compression)')
-    # parser.add_argument('--use_cache_compression', action='store_true',
-    #                    help='Enable cache compression')
-    # parser.add_argument('--compression_ratio', type=float, default=0.5,
-    #                    help='Ratio of cache to compress (0.5 = 50% compressed, 50% recent)')
-    # parser.add_argument('--persistent_cache', action='store_true',
-    #                    help='Enable persistent cache across batches')
+    parser.add_argument('--compressed_dim', type=int, default=1, help='size of the sequence length dimension in the compressed cache')
     
     # Gumbel Softmax parameters
     parser.add_argument('--gumbel_softmax', action='store_true', 
@@ -190,7 +173,6 @@ def main():
                        choices=['adamw', 'sgd'], help='Optimizer type')
     parser.add_argument('--scheduler_type', type=str, default='plateau', 
                        choices=['cosine', 'step', 'plateau'], help='Learning rate scheduler')
-    parser.add_argument('--cache_strategy', type=str, default='epoch')
     # Training setup
     parser.add_argument('--epochs', type=int, default=20, 
                        help='Number of epochs')
@@ -210,7 +192,7 @@ def main():
                        help='Directory for logs')
     parser.add_argument('--checkpoint_dir', type=str, default='checkpoints', 
                        help='Directory for checkpoints')
-    parser.add_argument('--log_every_n_steps', type=int, default=50, 
+    parser.add_argument('--log_every_n_steps', type=int, default=1000, 
                        help='Log every N steps')
     parser.add_argument('--val_check_interval', type=float, default=1.0, 
                        help='Validation check interval (epochs)')
@@ -250,7 +232,6 @@ def main():
     print(f"Experiment: {args.experiment_name}")
     print(f"Data: vocab_size={args.vocab_size}, seq_len={args.sequence_length}, batch_size={args.batch_size}")
     print(f"Model: ninp={args.ninp}, nhid={args.nhid}, nheads={args.nheads}")
-    # print(f"Cache: max_len={args.max_cache_length}, compression={args.use_cache_compression}, persistent={args.persistent_cache}")
     print(f"Attention: gumbel={args.gumbel_softmax}, temp={args.temperature}")
     print(f"Training: lr={args.learning_rate}, epochs={args.epochs}, devices={args.devices}")
     print("="*80)
@@ -292,19 +273,14 @@ def main():
         optimizer_type=args.optimizer_type,
         weight_decay=args.weight_decay,
         scheduler_type=args.scheduler_type,
-        cache_strategy=args.cache_strategy
-        # max_cache_length=args.max_cache_length,
-        # use_cache_compression=args.use_cache_compression,
-        # compression_ratio=args.compression_ratio
+        seq_len = args.sequence_length,
+        compressed_dim = args.compressed_dim
+
     )
     
-    # Enable persistent cache if requested
-    # if args.persistent_cache:
-    #     model.set_persistent_cache_mode(True)
-    #     print("✅ Persistent cache enabled - cache will carry across batches")
-    
+
     # Print model and data info
-    print_model_info(model, data_module)
+    # print_model_info(model, data_module)
     
     # Create trainer
     trainer = create_trainer(args)
