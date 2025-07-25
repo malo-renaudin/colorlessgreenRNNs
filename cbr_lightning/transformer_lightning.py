@@ -4,7 +4,26 @@ import torch.nn.functional as F
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader, Dataset
 import math
+from attention import MultiheadAttention
 
+class TemperatureScheduler:
+    """Simple exponential decay temperature scheduler"""
+    
+    def __init__(self, initial_temp=1.0, decay_rate=0.95, final_temp=0.1):
+        self.initial_temp = initial_temp
+        self.decay_rate = decay_rate
+        self.final_temp = final_temp
+        self.current_epoch = 0
+    
+    def step(self):
+        """Update the current epoch"""
+        self.current_epoch += 1
+    
+    def get_temperature(self):
+        """Get current temperature using exponential decay"""
+        temp = self.initial_temp * (self.decay_rate ** self.current_epoch)
+        return max(temp, self.final_temp)
+    
 
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model, max_len=5000):
@@ -25,7 +44,7 @@ class PositionalEncoding(nn.Module):
 class TransformerBlock(nn.Module):
     def __init__(self, d_model, n_heads, d_ff, dropout=0.1):
         super().__init__()
-        self.attention = nn.MultiheadAttention(d_model, n_heads, dropout=dropout, batch_first=True)
+        self.attention = MultiheadAttention(d_model, n_heads, dropout=dropout, batch_first=True)
         self.norm1 = nn.LayerNorm(d_model)
         self.norm2 = nn.LayerNorm(d_model)
         
@@ -36,9 +55,9 @@ class TransformerBlock(nn.Module):
         )
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x, mask=None):
+    def forward(self, x, temperature, gumbel_softmax, mask=None):
         # Self-attention with residual connection
-        attn_out, _ = self.attention(x, x, x, attn_mask=mask)
+        attn_out, _ = self.attention(x, x, x,  attn_mask=mask, temperature=temperature, gumbel_softmax=gumbel_softmax, need_weights=False)
         x = self.norm1(x + self.dropout(attn_out))
         
         # Feed-forward with residual connection
@@ -47,9 +66,9 @@ class TransformerBlock(nn.Module):
         return x
 
 
-class SimpleTransformer(pl.LightningModule):
-    def __init__(self, vocab_size, d_model=256, n_heads=8, n_layers=6, 
-                 d_ff=1024, max_seq_len=512, dropout=0.1, lr=1e-4):
+class Transformer(pl.LightningModule):
+    def __init__(self, vocab_size, d_model, n_heads, n_layers, 
+                 d_ff, max_seq_len, dropout, lr, temperature, gumbel_softmax):
         super().__init__()
         self.save_hyperparameters()
         
@@ -65,6 +84,9 @@ class SimpleTransformer(pl.LightningModule):
             TransformerBlock(d_model, n_heads, d_ff, dropout)
             for _ in range(n_layers)
         ])
+        
+        self.temperature = temperature
+        self.gumbel_softmax = gumbel_softmax
         
         # Output projection
         self.ln_f = nn.LayerNorm(d_model)
@@ -90,8 +112,9 @@ class SimpleTransformer(pl.LightningModule):
         return mask
     
     def forward(self, input_ids):
-        seq_len = input_ids.size(1)
-        
+        seq_len = input_ids.size(0)
+        print('seq_len', seq_len)
+        input_ids=input_ids.transpose(0,1)
         # Token embeddings + positional encoding
         x = self.token_embedding(input_ids) * math.sqrt(self.d_model)
         x = x.transpose(0, 1)  # (seq_len, batch_size, d_model)
@@ -104,7 +127,7 @@ class SimpleTransformer(pl.LightningModule):
         
         # Pass through transformer blocks
         for block in self.transformer_blocks:
-            x = block(x, causal_mask)
+            x = block(x, causal_mask, self.temperature, self.gumbel_softmax)
         
         # Final layer norm and projection
         x = self.ln_f(x)
@@ -112,18 +135,25 @@ class SimpleTransformer(pl.LightningModule):
         
         return logits
     
+    
+    def on_train_epoch_start(self):
+        """Update temperature at the start of each training epoch"""
+        self.temp_scheduler.step()
+        self.temperature = self.temp_scheduler.get_temperature()
+            
+            
     def training_step(self, batch, batch_idx):
         input_ids, targets = batch
-        logits = self(input_ids)
+        logits = self(input_ids, self.temperature, self.gumbel_softmax)
         
         # Shift logits and targets for next token prediction
-        shift_logits = logits[..., :-1, :].contiguous()
-        shift_targets = targets[..., 1:].contiguous()
+        # shift_logits = logits[..., :-1, :].contiguous()
+        # shift_targets = targets[..., 1:].contiguous()
         
         # Calculate loss
         loss = F.cross_entropy(
-            shift_logits.view(-1, shift_logits.size(-1)),
-            shift_targets.view(-1),
+            logits.reshape(-1, logits.size(-1)),
+            targets.reshape(-1),
             ignore_index=-100
         )
         
@@ -134,12 +164,12 @@ class SimpleTransformer(pl.LightningModule):
         input_ids, targets = batch
         logits = self(input_ids)
         
-        shift_logits = logits[..., :-1, :].contiguous()
-        shift_targets = targets[..., 1:].contiguous()
+        # shift_logits = logits[..., :-1, :].contiguous()
+        # shift_targets = targets[..., 1:].contiguous()
         
         loss = F.cross_entropy(
-            shift_logits.view(-1, shift_logits.size(-1)),
-            shift_targets.view(-1),
+            logits.reshape(-1, logits.size(-1)),
+            targets.reshape(-1),
             ignore_index=-100
         )
         

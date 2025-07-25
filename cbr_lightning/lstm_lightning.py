@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader, Dataset
 import math
 
 
-class SimpleLSTM(pl.LightningModule):
+class LSTM(pl.LightningModule):
     def __init__(self, vocab_size, embedding_dim=256, hidden_dim=512, 
                  num_layers=2, dropout=0.2, lr=1e-3):
         super().__init__()
@@ -64,7 +64,8 @@ class SimpleLSTM(pl.LightningModule):
         return (h0, c0)
     
     def forward(self, input_ids, hidden=None):
-        batch_size, seq_len = input_ids.size()
+        seq_len, batch_size= input_ids.size()
+        input_ids = input_ids.transpose(0,1)
         
         # Initialize hidden state if not provided
         if hidden is None:
@@ -94,8 +95,8 @@ class SimpleLSTM(pl.LightningModule):
         
         # Calculate loss
         loss = F.cross_entropy(
-            logits.view(-1, logits.size(-1)),
-            targets.view(-1),
+            logits.reshape(-1, logits.size(-1)),
+            targets.reshape(-1),
             ignore_index=-100
         )
         
@@ -114,8 +115,8 @@ class SimpleLSTM(pl.LightningModule):
         # shift_targets = targets[..., 1:].contiguous()
         
         loss = F.cross_entropy(
-            logits.view(-1, logits.size(-1)),
-            targets.view(-1),
+            logits.reshape(-1, logits.size(-1)),
+            targets.reshape(-1),
             ignore_index=-100
         )
         
@@ -126,10 +127,8 @@ class SimpleLSTM(pl.LightningModule):
         return loss
     
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.lr)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode='min', factor=0.5, patience=3, verbose=True
-        )
+        optimizer = torch.optim.AdamW(self.parameters(), lr=self.hparams.lr, weight_decay=0.01)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=1000)
         return {
             "optimizer": optimizer,
             "lr_scheduler": {
@@ -137,5 +136,6 @@ class SimpleLSTM(pl.LightningModule):
                 "monitor": "val_loss"
             }
         }
+    
     
     
