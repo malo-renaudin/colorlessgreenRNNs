@@ -11,7 +11,7 @@ grand_parent_dir = os.path.dirname(parent_dir)
 print(grand_parent_dir)
 sys.path.append(os.path.abspath(grand_parent_dir))
 from eval_surprisal.util import load_data, Predicting_RT_with_spillover, process_model_data
-from brms_parameters import get_brms_parameters
+from eval_surprisal.brm.brm_parameters import get_brms_parameters
 import bambi as bmb
 import pandas as pd
 import numpy as np
@@ -119,7 +119,7 @@ with open("brm_predicted_lstm_Agr_P2.pkl", "wb") as f:
 print(az.summary(brm_predicted_lstm_Agr_P2))
 del brm_predicted_lstm_Agr_P2
 
-print("Fitting GPT-2 models...")
+# print("Fitting GPT-2 models...")
 
 # GPT-2 models
 # # GPT-2 P0

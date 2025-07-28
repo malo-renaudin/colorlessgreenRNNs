@@ -232,7 +232,7 @@ def main():
     print(models_filler_lstm.summary())
     
     # Save model
-    with open("filler_models/filler_lstm_sum.pkl", "wb") as f:
+    with open("eval_surprisal/filler_models/filler_lstm_sum.pkl", "wb") as f:
         pickle.dump(models_filler_lstm, f)
     
     # Save model coefficients and summary statistics

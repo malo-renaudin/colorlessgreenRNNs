@@ -1,6 +1,40 @@
-import pandas as pd 
+import sys
+import pandas as pd
+from pandas.core.indexes import base, range as pd_range
+import types
+
+# Create the missing numeric module mapping
+numeric_module = types.ModuleType('pandas.core.indexes.numeric')
+
+# Copy everything from base module
+for attr_name in dir(base):
+    if not attr_name.startswith('_'):
+        setattr(numeric_module, attr_name, getattr(base, attr_name))
+
+# Add range-specific items
+for attr_name in dir(pd_range):
+    if not attr_name.startswith('_'):
+        setattr(numeric_module, attr_name, getattr(pd_range, attr_name))
+
+# Register the module
+sys.modules['pandas.core.indexes.numeric'] = numeric_module
+
+print("Successfully created pandas.core.indexes.numeric module mapping")
+
 import pickle
 import numpy as np 
+import sys
+import joblib
+import sys
+import pandas as pd
+
+# sys.modules['pandas.core.indexes.numeric'] = numeric
+
+# Print current pandas version and available modules
+print(f"Pandas version: {pd.__version__}")
+print("Available pandas.core.indexes modules:")
+import pandas.core.indexes
+print(dir(pandas.core.indexes))
 
 def load_data(subsetname, RTcutoffhigh=7000, RTcutofflow=0):
     # Map subset names to filenames
@@ -33,7 +67,7 @@ def load_data(subsetname, RTcutoffhigh=7000, RTcutofflow=0):
     return rt_data
 
 
-def Predicting_RT_with_spillover(rt_data_df, subsetname, models=['gpt2', 'lstm', 'nosurp']):
+def Predicting_RT_with_spillover(rt_data_df, subsetname, models=['lstm']):
     """
     Predict reading times with spillover effects using trained filler models
     
@@ -62,7 +96,7 @@ def Predicting_RT_with_spillover(rt_data_df, subsetname, models=['gpt2', 'lstm',
                 print(f'Processing model {model}')
                 
                 # Load surprisal data for Agreement
-                surps_path = f'../../Surprisals/data/{model}/items_{subsetname}.{model}.csv.scaled'
+                surps_path = f'eval_surprisal/get_surprisal/data/{model}/items_{subsetname}.{model}.csv.scaled'
                 surps = pd.read_csv(surps_path)
                 surps['word_pos'] = surps['word_pos'] + 1  # Adjust to 1-indexing
                 surps['model'] = model
@@ -72,7 +106,7 @@ def Predicting_RT_with_spillover(rt_data_df, subsetname, models=['gpt2', 'lstm',
                                             'sum_surprisal_s': 'surprisal_s'})
                 
                 # Load ClassicGP data for NPZ conditions
-                surps2_path = f'../../Surprisals/data/{model}/items_ClassicGP.{model}.csv.scaled'
+                surps2_path = f'eval_surprisal/get_surprisal/data/{model}/items_ClassicGP.{model}.csv.scaled'
                 surps2 = pd.read_csv(surps2_path)
                 
                 # Filter for NPZ conditions and matching items
@@ -93,15 +127,15 @@ def Predicting_RT_with_spillover(rt_data_df, subsetname, models=['gpt2', 'lstm',
                 surps = pd.concat([surps, surps2], ignore_index=True)
                 
                 # Load filler model
-                filler_model_path = f'../../Surprisals/analysis/filler_models/filler_{model}_sum.pkl'
+                filler_model_path = f'eval_surprisal/filler_models/filler_{model}_sum.pkl'
                 with open(filler_model_path, 'rb') as f:
-                    filler_model = pickle.load(f)
+                    filler_model = joblib.load(f)
                 
             else:  # nosurp model (third model)
                 print(f'Processing model {model}')
                 
                 # For nosurp model, use LSTM data but nosurp filler model
-                surps_path = f'../../Surprisals/data/lstm/items_{subsetname}.lstm.csv.scaled'
+                surps_path = f'eval_surprisal/get_surprisal/data/lstm/items_{subsetname}.lstm.csv.scaled'
                 surps = pd.read_csv(surps_path)
                 surps['word_pos'] = surps['word_pos'] + 1  # Adjust to 1-indexing
                 surps['model'] = model
@@ -111,7 +145,7 @@ def Predicting_RT_with_spillover(rt_data_df, subsetname, models=['gpt2', 'lstm',
                                             'sum_surprisal_s': 'surprisal_s'})
                 
                 # Load ClassicGP data for NPZ conditions
-                surps2_path = f'../../Surprisals/data/lstm/items_ClassicGP.lstm.csv.scaled'
+                surps2_path = f'eval_surprisal/get_surprisal/data/lstm/items_ClassicGP.lstm.csv.scaled'
                 surps2 = pd.read_csv(surps2_path)
                 
                 agree_items = rt_data_df[rt_data_df['Type'] == 'AGREE']['item'].unique()
@@ -130,10 +164,14 @@ def Predicting_RT_with_spillover(rt_data_df, subsetname, models=['gpt2', 'lstm',
                 surps = pd.concat([surps, surps2], ignore_index=True)
                 
                 # Load nosurp filler model
-                filler_model_path = f'../../Surprisals/analysis/filler_models/filler_sum_nosurp.pkl'
+                filler_model_path = f'eval_surprisal/filler_models/filler_sum_nosurp.pkl'
                 with open(filler_model_path, 'rb') as f:
-                    filler_model = pickle.load(f)
-            
+                    try:
+                        filler_model = pickle.load(f)
+                    except:
+                        f.seek(0)
+                        filler_model = pickle.load(f, encoding='latin1')
+                            
             # Process data (same for both cases)
             rt_data_processed = process_model_data(rt_data_df, surps, filler_model, model)
             pred_list.append(rt_data_processed)
@@ -146,7 +184,7 @@ def Predicting_RT_with_spillover(rt_data_df, subsetname, models=['gpt2', 'lstm',
                 print(f'Processing model {model}')
                 
                 # Load surprisal data
-                surps_path = f'../../Surprisals/data/{model}/items_{subsetname}.{model}.csv.scaled'
+                surps_path = f'eval_surprisal/get_surprisal/data/{model}/items_{subsetname}.{model}.csv.scaled'
                 surps = pd.read_csv(surps_path)
                 surps['word_pos'] = surps['word_pos'] + 1  # Adjust to 1-indexing
                 surps['model'] = model
@@ -156,15 +194,19 @@ def Predicting_RT_with_spillover(rt_data_df, subsetname, models=['gpt2', 'lstm',
                                             'sum_surprisal_s': 'surprisal_s'})
                 
                 # Load filler model
-                filler_model_path = f'../../Surprisals/analysis/filler_models/filler_{model}_sum.pkl'
+                filler_model_path = f'eval_surprisal/get_surprisal/data/filler_models/filler_{model}_sum.pkl'
                 with open(filler_model_path, 'rb') as f:
-                    filler_model = pickle.load(f)
+                    try:
+                        filler_model = pickle.load(f)
+                    except:
+                        f.seek(0)
+                        filler_model = pickle.load(f, encoding='latin1')
                 
             else:  # nosurp model
                 print(f'Processing model {model}')
                 
                 # For nosurp model, use LSTM data
-                surps_path = f'../../Surprisals/data/lstm/items_{subsetname}.lstm.csv.scaled'
+                surps_path = f'eval_surprisal/get_surprisal/data/lstm/items_{subsetname}.lstm.csv.scaled'
                 surps = pd.read_csv(surps_path)
                 surps['word_pos'] = surps['word_pos'] + 1  # Adjust to 1-indexing
                 surps['model'] = model
@@ -174,9 +216,9 @@ def Predicting_RT_with_spillover(rt_data_df, subsetname, models=['gpt2', 'lstm',
                                             'sum_surprisal_s': 'surprisal_s'})
                 
                 # Load nosurp filler model
-                filler_model_path = f'../../Surprisals/analysis/filler_models/filler_sum_nosurp.pkl'
+                filler_model_path = f'eval_surprisal/get_surprisal/data/filler_models/filler_sum_nosurp.pkl'
                 with open(filler_model_path, 'rb') as f:
-                    filler_model = pickle.load(f)
+                    filler_model = joblib.load(f)
             
             # Process data
             rt_data_processed = process_model_data(rt_data_df, surps, filler_model, model)
