@@ -1,7 +1,16 @@
-# These scripts are run with NYU greene high performance computing service
 import sys
-sys.path.append('../')
-from util import load_data, Predicting_RT_with_spillover
+import os
+
+# Get the directory of the current script
+script_dir = os.path.dirname(os.path.abspath(__file__))
+# Go up one level from the script's directory (evaluation_notebooks)
+parent_dir = os.path.dirname(script_dir)
+grand_parent_dir = os.path.dirname(parent_dir)
+# Join with 'src' to get the correct path to the src directory
+#src_dir = os.path.join(grand_parent_dir, "src")
+print(grand_parent_dir)
+sys.path.append(os.path.abspath(grand_parent_dir))
+from eval_surprisal.util import load_data, Predicting_RT_with_spillover, process_model_data
 from brms_parameters import get_brms_parameters
 import bambi as bmb
 import pandas as pd
@@ -113,49 +122,49 @@ del brm_predicted_lstm_Agr_P2
 print("Fitting GPT-2 models...")
 
 # GPT-2 models
-# GPT-2 P0
-brm_predicted_gpt2_Agr_P0 = fit_bambi_model(PredictedRT_df, "gpt2", 0)
-with open("brm_predicted_gpt2_Agr_P0.pkl", "wb") as f:
-    pickle.dump(brm_predicted_gpt2_Agr_P0, f)
-print(az.summary(brm_predicted_gpt2_Agr_P0))
-del brm_predicted_gpt2_Agr_P0
+# # GPT-2 P0
+# brm_predicted_gpt2_Agr_P0 = fit_bambi_model(PredictedRT_df, "gpt2", 0)
+# with open("brm_predicted_gpt2_Agr_P0.pkl", "wb") as f:
+#     pickle.dump(brm_predicted_gpt2_Agr_P0, f)
+# print(az.summary(brm_predicted_gpt2_Agr_P0))
+# del brm_predicted_gpt2_Agr_P0
 
-# GPT-2 P1
-brm_predicted_gpt2_Agr_P1 = fit_bambi_model(PredictedRT_df, "gpt2", 1)
-with open("brm_predicted_gpt2_Agr_P1.pkl", "wb") as f:
-    pickle.dump(brm_predicted_gpt2_Agr_P1, f)
-print(az.summary(brm_predicted_gpt2_Agr_P1))
-del brm_predicted_gpt2_Agr_P1
+# # GPT-2 P1
+# brm_predicted_gpt2_Agr_P1 = fit_bambi_model(PredictedRT_df, "gpt2", 1)
+# with open("brm_predicted_gpt2_Agr_P1.pkl", "wb") as f:
+#     pickle.dump(brm_predicted_gpt2_Agr_P1, f)
+# print(az.summary(brm_predicted_gpt2_Agr_P1))
+# del brm_predicted_gpt2_Agr_P1
 
-# GPT-2 P2 (with custom iterations)
-def fit_bambi_model_custom_iters(data, model_name, roi, draws=7500, tune=7500):
-    """
-    Fit a Bayesian model with custom iteration parameters
-    """
-    filtered_data = data[
-        (data['Type'] == "AGREE") & 
-        (data['ROI'] == roi) & 
-        (data['model'] == model_name) & 
-        (data['RT'].notna())
-    ].copy()
+# # GPT-2 P2 (with custom iterations)
+# def fit_bambi_model_custom_iters(data, model_name, roi, draws=7500, tune=7500):
+#     """
+#     Fit a Bayesian model with custom iteration parameters
+#     """
+#     filtered_data = data[
+#         (data['Type'] == "AGREE") & 
+#         (data['ROI'] == roi) & 
+#         (data['model'] == model_name) & 
+#         (data['RT'].notna())
+#     ].copy()
     
-    formula = "predicted ~ pGram_coded + (1|item) + (1|participant) + (pGram_coded|item) + (pGram_coded|participant)"
-    model = bmb.Model(formula, filtered_data)
+#     formula = "predicted ~ pGram_coded + (1|item) + (1|participant) + (pGram_coded|item) + (pGram_coded|participant)"
+#     model = bmb.Model(formula, filtered_data)
     
-    fitted_model = model.fit(
-        draws=draws,
-        tune=tune,
-        chains=brm_param_list['ncores'],
-        random_seed=brm_param_list['seed'],
-        target_accept=brm_param_list['adapt_delta']
-    )
+#     fitted_model = model.fit(
+#         draws=draws,
+#         tune=tune,
+#         chains=brm_param_list['ncores'],
+#         random_seed=brm_param_list['seed'],
+#         target_accept=brm_param_list['adapt_delta']
+#     )
     
-    return fitted_model
+#     return fitted_model
 
-brm_predicted_gpt2_Agr_P2 = fit_bambi_model_custom_iters(PredictedRT_df, "gpt2", 2, draws=7500, tune=7500)
-with open("brm_predicted_gpt2_Agr_P2.pkl", "wb") as f:
-    pickle.dump(brm_predicted_gpt2_Agr_P2, f)
-print(az.summary(brm_predicted_gpt2_Agr_P2))
-del brm_predicted_gpt2_Agr_P2
+# brm_predicted_gpt2_Agr_P2 = fit_bambi_model_custom_iters(PredictedRT_df, "gpt2", 2, draws=7500, tune=7500)
+# with open("brm_predicted_gpt2_Agr_P2.pkl", "wb") as f:
+#     pickle.dump(brm_predicted_gpt2_Agr_P2, f)
+# print(az.summary(brm_predicted_gpt2_Agr_P2))
+# del brm_predicted_gpt2_Agr_P2
 
 print("All models fitted and saved successfully!")
