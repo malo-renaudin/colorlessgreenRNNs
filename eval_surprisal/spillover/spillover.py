@@ -11,7 +11,7 @@ import numpy as np
 import sys
 import os
 import gc
-import pickle
+import joblib
 from datetime import datetime
 import statsmodels.api as sm
 import statsmodels.formula.api as smf
@@ -233,7 +233,7 @@ def main():
     
     # Save model
     with open("eval_surprisal/filler_models/filler_lstm_sum.pkl", "wb") as f:
-        pickle.dump(models_filler_lstm, f)
+        joblib.dump(models_filler_lstm, f)
     
     # Save model coefficients and summary statistics
     model_info = {
@@ -245,7 +245,7 @@ def main():
     }
     
     with open("filler_models/filler_lstm_sum_info.pkl", "wb") as f:
-        pickle.dump(model_info, f)
+        joblib.dump(model_info, f)
     
     # Free memory
     del dropped_lstm

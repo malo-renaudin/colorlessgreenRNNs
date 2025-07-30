@@ -17,7 +17,7 @@ import pandas as pd
 import numpy as np
 import pickle
 import arviz as az
-
+print('ok')
 # Load data
 rt_data = load_data("Agreement")
 PredictedRT_df = Predicting_RT_with_spillover(rt_data, "Agreement")

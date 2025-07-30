@@ -30,11 +30,11 @@ import pandas as pd
 
 # sys.modules['pandas.core.indexes.numeric'] = numeric
 
-# Print current pandas version and available modules
-print(f"Pandas version: {pd.__version__}")
-print("Available pandas.core.indexes modules:")
-import pandas.core.indexes
-print(dir(pandas.core.indexes))
+# # Print current pandas version and available modules
+# print(f"Pandas version: {pd.__version__}")
+# print("Available pandas.core.indexes modules:")
+# import pandas.core.indexes
+# print(dir(pandas.core.indexes))
 
 def load_data(subsetname, RTcutoffhigh=7000, RTcutofflow=0):
     # Map subset names to filenames
