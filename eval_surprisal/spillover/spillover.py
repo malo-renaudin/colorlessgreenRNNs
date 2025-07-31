@@ -17,12 +17,12 @@ import statsmodels.api as sm
 import statsmodels.formula.api as smf
 from sklearn.preprocessing import StandardScaler
 import warnings
-from util import load_data
+# from eval_surprisal.util import load_data
 warnings.filterwarnings('ignore')
 
 # Add path for util functions
-# sys.path.append("../../analysis/shared/")
-# from util import load_data
+sys.path.append("eval_surprisal")
+from util import load_data
 
 print(f"Analysis started: {datetime.now()}")
 

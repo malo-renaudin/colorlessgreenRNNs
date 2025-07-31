@@ -17,7 +17,9 @@ import pandas as pd
 import numpy as np
 import pickle
 import arviz as az
+import pyreadr  # For loading .rds files
 print('ok')
+
 # Load data
 rt_data = load_data("Agreement")
 PredictedRT_df = Predicting_RT_with_spillover(rt_data, "Agreement")
@@ -47,13 +49,108 @@ PredictedRT_df['position.coded.2'] = PredictedRT_df['ROI'].map(position_mapping_
 # Get BRMS parameters
 brm_param_list = get_brms_parameters("prior1")
 
-# Define priors (these would need to be adapted to bambi/PyMC syntax)
-# Note: bambi uses different prior specification syntax than brms
-# prior1 equivalent would be specified in bambi model definition
+# Rename column for bambi compatibility
+PredictedRT_df['pGram_coded'] = PredictedRT_df['pGram.coded']
+
+# Drop predicted column if it exists
+if 'predicted' in PredictedRT_df.columns:
+    PredictedRT_df = PredictedRT_df.drop(columns='predicted')
+
+def load_pretrained_model(filepath, model_type="rds"):
+    """
+    Load a pretrained model from different formats
+    
+    Parameters:
+    -----------
+    filepath : str
+        Path to the model file
+    model_type : str
+        Type of model file ("rds", "pkl", "nc")
+    
+    Returns:
+    --------
+    object
+        Loaded model object
+    """
+    try:
+        if model_type == "rds":
+            # Load R model using pyreadr
+            print(f"Loading RDS model from {filepath}")
+            result = pyreadr.read_r(filepath)
+            model = result[None]  # RDS files contain single object
+            print(f"Successfully loaded RDS model, type: {type(model)}")
+            return model
+            
+        elif model_type == "pkl":
+            # Load Python pickle file
+            print(f"Loading pickle model from {filepath}")
+            with open(filepath, 'rb') as f:
+                model = pickle.load(f)
+            print(f"Successfully loaded pickle model, type: {type(model)}")
+            return model
+            
+        elif model_type == "nc":
+            # Load NetCDF file (ArviZ format)
+            print(f"Loading NetCDF model from {filepath}")
+            model = az.from_netcdf(filepath)
+            print(f"Successfully loaded NetCDF model, type: {type(model)}")
+            return model
+            
+        else:
+            raise ValueError(f"Unsupported model type: {model_type}")
+            
+    except Exception as e:
+        print(f"Error loading model from {filepath}: {e}")
+        return None
+
+def analyze_pretrained_model(model, model_name):
+    """
+    Analyze a pretrained model and extract key information
+    
+    Parameters:
+    -----------
+    model : object
+        Loaded model object
+    model_name : str
+        Name of the model for identification
+    """
+    print(f"\n=== Analysis for {model_name} ===")
+    
+    try:
+        # Try to get model summary if it's an ArviZ InferenceData object
+        if hasattr(model, 'posterior'):
+            print("Model contains posterior samples")
+            summary = az.summary(model)
+            print(summary)
+            
+            # Plot diagnostics
+            try:
+                az.plot_trace(model)
+                az.plot_posterior(model)
+            except Exception as e:
+                print(f"Could not create plots: {e}")
+                
+        # If it's an R brms model, try to extract information
+        elif hasattr(model, 'names'):
+            print(f"R model components: {list(model.names)}")
+            
+            # Try to access common brms components
+            if 'fit' in model.names:
+                print("Model contains Stan fit object")
+            if 'data' in model.names:
+                print("Model contains data")
+            if 'formula' in model.names:
+                print(f"Model formula: {model.rx2('formula')}")
+                
+        else:
+            print(f"Unknown model structure. Available attributes: {dir(model)}")
+            
+    except Exception as e:
+        print(f"Error analyzing model: {e}")
 
 def fit_bambi_model(data, model_name, roi):
     """
-    Fit a Bayesian model using bambi (Python equivalent of brms)
+    Fit a Bayesian model using bambi (only if pretrained model not available)
     """
     # Filter data
     filtered_data = data[
@@ -64,8 +161,12 @@ def fit_bambi_model(data, model_name, roi):
     ].copy()
     
     # Define model formula
-    # bambi syntax: outcome ~ predictors + (random_effects)
-    formula = "predicted ~ pGram_coded + (1|item) + (1|participant) + (pGram_coded|item) + (pGram_coded|participant)"
+    formula = "RT ~ pGram_coded + (1|item) + (1|participant) + (pGram_coded|item) + (pGram_coded|participant)"
+    
+    print("Missing values per column:")
+    print(filtered_data.isnull().sum())
+    print(f"\nTotal rows: {len(filtered_data)}")
+    print(f"Complete rows: {len(filtered_data.dropna())}")
     
     # Create model
     model = bmb.Model(formula, filtered_data)
@@ -92,79 +193,92 @@ def fit_bambi_model(data, model_name, roi):
     
     return fitted_model
 
-# Rename column for bambi compatibility
-PredictedRT_df['pGram_coded'] = PredictedRT_df['pGram.coded']
+# Configuration: Set USE_PRETRAINED to True to load existing models
+USE_PRETRAINED = True  # Change to False if you want to retrain
+PRETRAINED_DIR = "eval_surprisal/pretrained_models/agreement"  # Directory containing pretrained models
 
-# LSTM models
-print("Fitting LSTM models...")
+# Model configurations
+models_config = [
+    {"name": "brm_predicted_lstm_Agr_P0", "model_type": "lstm", "roi": 0},
+    {"name": "brm_predicted_lstm_Agr_P1", "model_type": "lstm", "roi": 1}, 
+    {"name": "brm_predicted_lstm_Agr_P2", "model_type": "lstm", "roi": 2}
+]
 
-# LSTM P0
-brm_predicted_lstm_Agr_P0 = fit_bambi_model(PredictedRT_df, "lstm", 0)
-with open("brm_predicted_lstm_Agr_P0.pkl", "wb") as f:
-    pickle.dump(brm_predicted_lstm_Agr_P0, f)
-print(az.summary(brm_predicted_lstm_Agr_P0))
-del brm_predicted_lstm_Agr_P0
+# Process models
+loaded_models = {}
 
-# LSTM P1
-brm_predicted_lstm_Agr_P1 = fit_bambi_model(PredictedRT_df, "lstm", 1)
-with open("brm_predicted_lstm_Agr_P1.pkl", "wb") as f:
-    pickle.dump(brm_predicted_lstm_Agr_P1, f)
-print(az.summary(brm_predicted_lstm_Agr_P1))
-del brm_predicted_lstm_Agr_P1
-
-# LSTM P2
-brm_predicted_lstm_Agr_P2 = fit_bambi_model(PredictedRT_df, "lstm", 2)
-with open("brm_predicted_lstm_Agr_P2.pkl", "wb") as f:
-    pickle.dump(brm_predicted_lstm_Agr_P2, f)
-print(az.summary(brm_predicted_lstm_Agr_P2))
-del brm_predicted_lstm_Agr_P2
-
-# print("Fitting GPT-2 models...")
-
-# GPT-2 models
-# # GPT-2 P0
-# brm_predicted_gpt2_Agr_P0 = fit_bambi_model(PredictedRT_df, "gpt2", 0)
-# with open("brm_predicted_gpt2_Agr_P0.pkl", "wb") as f:
-#     pickle.dump(brm_predicted_gpt2_Agr_P0, f)
-# print(az.summary(brm_predicted_gpt2_Agr_P0))
-# del brm_predicted_gpt2_Agr_P0
-
-# # GPT-2 P1
-# brm_predicted_gpt2_Agr_P1 = fit_bambi_model(PredictedRT_df, "gpt2", 1)
-# with open("brm_predicted_gpt2_Agr_P1.pkl", "wb") as f:
-#     pickle.dump(brm_predicted_gpt2_Agr_P1, f)
-# print(az.summary(brm_predicted_gpt2_Agr_P1))
-# del brm_predicted_gpt2_Agr_P1
-
-# # GPT-2 P2 (with custom iterations)
-# def fit_bambi_model_custom_iters(data, model_name, roi, draws=7500, tune=7500):
-#     """
-#     Fit a Bayesian model with custom iteration parameters
-#     """
-#     filtered_data = data[
-#         (data['Type'] == "AGREE") & 
-#         (data['ROI'] == roi) & 
-#         (data['model'] == model_name) & 
-#         (data['RT'].notna())
-#     ].copy()
+for config in models_config:
+    model_name = config["name"]
+    model_type = config["model_type"] 
+    roi = config["roi"]
     
-#     formula = "predicted ~ pGram_coded + (1|item) + (1|participant) + (pGram_coded|item) + (pGram_coded|participant)"
-#     model = bmb.Model(formula, filtered_data)
+    if USE_PRETRAINED:
+        # Try to load pretrained model (check multiple formats)
+        model_loaded = False
+        
+        # Try .rds first (most likely for brms models)
+        rds_path = os.path.join(PRETRAINED_DIR, f"{model_name}.rds")
+        if os.path.exists(rds_path):
+            model = load_pretrained_model(rds_path, "rds")
+            if model is not None:
+                loaded_models[model_name] = model
+                analyze_pretrained_model(model, model_name)
+                model_loaded = True
+        
+        # Try .pkl if .rds not found
+        if not model_loaded:
+            pkl_path = os.path.join(PRETRAINED_DIR, f"{model_name}.pkl")
+            if os.path.exists(pkl_path):
+                model = load_pretrained_model(pkl_path, "pkl")
+                if model is not None:
+                    loaded_models[model_name] = model
+                    analyze_pretrained_model(model, model_name)
+                    model_loaded = True
+        
+        # Try .nc if others not found
+        if not model_loaded:
+            nc_path = os.path.join(PRETRAINED_DIR, f"{model_name}.nc")
+            if os.path.exists(nc_path):
+                model = load_pretrained_model(nc_path, "nc")
+                if model is not None:
+                    loaded_models[model_name] = model
+                    analyze_pretrained_model(model, model_name)
+                    model_loaded = True
+        
+        if not model_loaded:
+            print(f"No pretrained model found for {model_name}, will train new model")
+            USE_PRETRAINED = False
     
-#     fitted_model = model.fit(
-#         draws=draws,
-#         tune=tune,
-#         chains=brm_param_list['ncores'],
-#         random_seed=brm_param_list['seed'],
-#         target_accept=brm_param_list['adapt_delta']
-#     )
-    
-#     return fitted_model
+    if not USE_PRETRAINED:
+        # Train new model
+        print(f"Training new model: {model_name}")
+        fitted_model = fit_bambi_model(PredictedRT_df, model_type, roi)
+        
+        # Save the newly trained model
+        with open(f"{model_name}.pkl", "wb") as f:
+            pickle.dump(fitted_model, f)
+        
+        loaded_models[model_name] = fitted_model
+        print(az.summary(fitted_model))
+        
+        # Clean up memory
+        del fitted_model
 
-# brm_predicted_gpt2_Agr_P2 = fit_bambi_model_custom_iters(PredictedRT_df, "gpt2", 2, draws=7500, tune=7500)
-# with open("brm_predicted_gpt2_Agr_P2.pkl", "wb") as f:
-#     pickle.dump(brm_predicted_gpt2_Agr_P2, f)
-# print(az.summary(brm_predicted_gpt2_Agr_P2))
-# del brm_predicted_gpt2_Agr_P2
+print(f"\nSuccessfully processed {len(loaded_models)} models:")
+for name in loaded_models.keys():
+    print(f"  - {name}")
 
-print("All models fitted and saved successfully!")
+# Optional: Compare models if multiple are loaded
+if len(loaded_models) > 1:
+    try:
+        # This only works if models are ArviZ InferenceData objects
+        inference_data_models = {k: v for k, v in loaded_models.items() 
+                               if hasattr(v, 'posterior')}
+        if len(inference_data_models) > 1:
+            comparison = az.compare(inference_data_models)
+            print("\nModel Comparison:")
+            print(comparison)
+    except Exception as e:
+        print(f"Could not compare models: {e}")
+
+print("Analysis completed!")
