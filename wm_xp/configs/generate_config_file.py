@@ -15,7 +15,8 @@ def generate_config(hidden_dim_range, heads_range, temp_range, gumbel_softmax_op
     # Write to file
     with open(output, 'w') as f:
         for hidden_dim, num_heads, temp, gumbel_softmax in combinations:
-            # Convert boolean to lowercase string for consistency
+            if not gumbel_softmax:
+                temp = 1
             gumbel_str = str(gumbel_softmax).lower()
             f.write(f"{hidden_dim},{num_heads},{temp},{gumbel_str}\n")
 
