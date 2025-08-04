@@ -251,7 +251,7 @@ def main():
         sequence_length=args.sequence_length,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
-        max_val_samples=args.max_val_samples
+        #max_val_samples=args.max_val_samples
     )
     
     # Set up the data to get vocabulary size
