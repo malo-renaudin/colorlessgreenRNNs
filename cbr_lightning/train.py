@@ -140,7 +140,7 @@ def main():
     # Data parameters
     parser.add_argument('--vocab_size', type=int, default=50000, 
                        help='Vocabulary size')
-    parser.add_argument('--sequence_length', type=int, default=64, 
+    parser.add_argument('--sequence_length', type=int, default=128, 
                        help='Sequence length')
     parser.add_argument('--batch_size', type=int, default=512, 
                        help='Batch size')
@@ -148,11 +148,11 @@ def main():
                        help='Limit validation samples for faster validation')
     
     # Model architecture parameters
-    parser.add_argument('--ninp', type=int, default=256, 
+    parser.add_argument('--ninp', type=int, default=512, 
                        help='Embedding dimension')
-    parser.add_argument('--nhid', type=int, default=256, 
+    parser.add_argument('--nhid', type=int, default=1024, 
                        help='Hidden dimension')
-    parser.add_argument('--nheads', type=int, default=4, 
+    parser.add_argument('--nheads', type=int, default=1, 
                        help='Number of attention heads')
     parser.add_argument('--dropout', type=float, default=0.1, 
                        help='Dropout rate')
@@ -178,8 +178,8 @@ def main():
                        help='Number of epochs')
     parser.add_argument('--devices', type=int, default=1, 
                        help='Number of devices to use')
-    parser.add_argument('--precision', type=int, default=16, 
-                       choices=[16, 32], help='Training precision')
+    parser.add_argument('--precision', type=str, default='16-mixed', 
+                       help='Training precision')
     parser.add_argument('--clip_grad', type=float, default=1.0, 
                        help='Gradient clipping value')
     parser.add_argument('--accumulate_grad_batches', type=int, default=1, 
@@ -251,8 +251,33 @@ def main():
         sequence_length=args.sequence_length,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
-        max_val_samples=args.max_val_samples
+#        max_val_samples=args.max_val_samples
     )
+
+    data_module.prepare_data()
+    data_module.setup()
+    print(f"Vocabulary size: {len(data_module.tokenizer.word2idx)}")
+    print(f"Training samples: {len(data_module.train_dataset)}")
+    print(f"Validation samples: {len(data_module.val_dataset)}")
+    print("\n--- Debugging batch data ---")
+    train_loader = data_module.train_dataloader()
+    batch = next(iter(train_loader))
+    inputs, targets = batch
+    
+    vocab_size = len(data_module.tokenizer.word2idx)
+    print(f"Input shape: {inputs.shape}")  # Should be (seq_len, batch_size)
+    print(f"Target shape: {targets.shape}")  # Should be (seq_len, batch_size)
+    print(f"Input min/max: {inputs.min().item()}/{inputs.max().item()}")
+    print(f"Target min/max: {targets.min().item()}/{targets.max().item()}")
+    print(f"Vocabulary size: {vocab_size}")
+    
+    # Validate all token IDs are within bounds
+    if inputs.max().item() >= vocab_size or inputs.min().item() < 0:
+        raise ValueError(f"Input tokens out of bounds: min={inputs.min().item()}, max={inputs.max().item()}, vocab_size={vocab_size}")
+    if targets.max().item() >= vocab_size or targets.min().item() < 0:
+        raise ValueError(f"Target tokens out of bounds: min={targets.min().item()}, max={targets.max().item()}, vocab_size={vocab_size}")
+    
+    print("✓ All token IDs are within vocabulary bounds")
     
     # Set up the data to get vocabulary size
     data_module.setup()
@@ -274,8 +299,7 @@ def main():
         weight_decay=args.weight_decay,
         scheduler_type=args.scheduler_type,
         seq_len = args.sequence_length,
-        compressed_dim = args.compressed_dim
-
+        compressed_dim = args.compressed_dim,
     )
     
 
@@ -329,9 +353,9 @@ def main():
             print(f"Final model saved to: {final_model_path}")
         
         # Print cache statistics if persistent cache was used
-        if args.persistent_cache and hasattr(model, '_persistent_cache') and model._persistent_cache is not None:
-            final_cache_length = model._persistent_cache[1].size(1)
-            print(f"Final cache length: {final_cache_length}")
+#        if args.persistent_cache and hasattr(model, '_persistent_cache') and model._persistent_cache is not None:
+#            final_cache_length = model._persistent_cache[1].size(1)
+#            print(f"Final cache length: {final_cache_length}")
         
         print("="*80)
         
