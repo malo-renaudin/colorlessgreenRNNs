@@ -192,8 +192,9 @@ class CBR_RNN(pl.LightningModule):
     
     def on_train_epoch_start(self):
         """Update temperature at the start of each training epoch"""
-        self.temp_scheduler.step()
-        self.temperature = self.temp_scheduler.get_temperature()
+        if self.gumbel_softmax:
+           self.temp_scheduler.step()
+           self.temperature = self.temp_scheduler.get_temperature()
             
     def training_step(self, batch, batch_idx):
         # Extract data and targets from batch
@@ -206,9 +207,9 @@ class CBR_RNN(pl.LightningModule):
             # Detach from computational graph but keep values
             hidden, key_cache, value_cache = self.epoch_cache
             self.epoch_cache = (
-                hidden.detach(),
-                key_cache.detach(), 
-                value_cache.detach()
+                hidden.detach().clone(),
+                key_cache.detach().clone(), 
+                value_cache.detach().clone()
             )
         
         
@@ -221,8 +222,9 @@ class CBR_RNN(pl.LightningModule):
             gumbel_softmax=self.gumbel_softmax
         )
         
-        self.epoch_cache = new_cache
-        
+        if new_cache is not None:
+            self.epoch_cache = tuple(c.detach() for c in new_cache)
+            
         
         # Reshape outputs and targets for loss computation
         output_flat = output.reshape(-1, output.size(-1))
@@ -282,7 +284,7 @@ class CBR_RNN(pl.LightningModule):
         return loss
 
     def configure_optimizers(self):
-        optimizer = torch.optim.AdamW(self.parameters(), lr=self.hparams.lr, weight_decay=0.01)
+        optimizer = torch.optim.AdamW(self.parameters(), lr=self.hparams.learning_rate, weight_decay=0.01)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=1000)
         return {
             "optimizer": optimizer,
